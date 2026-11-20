@@ -1,0 +1,54 @@
+server:
+  port: 8090
+
+spring:
+  application:
+    name: api-gateway
+
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+
+            - id: ruta-auth
+              uri: lb://AUTH
+              predicates:
+                - Path=/api/auth,/api/auth/**
+
+            - id: ruta-usuarios
+              uri: lb://USUARIOS
+              predicates:
+                - Path=/api/usuarios,/api/usuarios/**
+
+            - id: ruta-empresas
+              uri: lb://EMPRESAS
+              predicates:
+                - Path=/api/empresas,/api/empresas/**
+
+            - id: ruta-equipos
+              uri: lb://EQUIPOS
+              predicates:
+                - Path=/api/equipos,/api/equipos/**
+
+            - id: ruta-protocolos
+              uri: lb://PROTOCOLOS
+              predicates:
+                - Path=/api/protocolos,/api/protocolos/**
+
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+
+  instance:
+    prefer-ip-address: false
+    ip-address: 127.0.0.1
+    hostname: 127.0.0.1
+    instance-id: 127.0.0.1:${spring.application.name}:${server.port}
+
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG
