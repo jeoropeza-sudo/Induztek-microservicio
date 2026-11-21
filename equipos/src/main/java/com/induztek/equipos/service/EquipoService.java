@@ -23,6 +23,10 @@ public class EquipoService {
         return repository.findByIdCliente(idCliente);
     }
 
+    public List<Equipo> listarPorInstalacion(Long idInstalacion) {
+        return repository.findByIdInstalacion(idInstalacion);
+    }
+
     public Optional<Equipo> buscarPorId(Long id) {
         return repository.findById(id);
     }
@@ -39,6 +43,7 @@ public class EquipoService {
             existente.setCodigo(datos.getCodigo());
             existente.setTipo(datos.getTipo());
             existente.setInstalacion(datos.getInstalacion());
+            existente.setIdInstalacion(datos.getIdInstalacion());
             existente.setDireccion(datos.getDireccion());
             existente.setLatitud(datos.getLatitud());
             existente.setLongitud(datos.getLongitud());

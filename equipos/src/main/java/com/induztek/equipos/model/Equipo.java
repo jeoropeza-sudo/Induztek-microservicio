@@ -26,6 +26,9 @@ public class Equipo {
     private String tipo;
 
     private String instalacion;
+
+    @Column(name = "id_instalacion")
+    private Long idInstalacion;
     private String direccion;
     private Double latitud;
     private Double longitud;

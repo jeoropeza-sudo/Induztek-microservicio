@@ -6,5 +6,6 @@ import java.util.List;
 
 public interface EquipoRepository extends JpaRepository<Equipo, Long> {
     List<Equipo> findByIdCliente(Long idCliente);
+    List<Equipo> findByIdInstalacion(Long idInstalacion);
     boolean existsByCodigo(String codigo);
 }

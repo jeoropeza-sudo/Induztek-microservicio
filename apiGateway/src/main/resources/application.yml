@@ -31,6 +31,16 @@ spring:
               predicates:
                 - Path=/api/equipos,/api/equipos/**
 
+            - id: ruta-instalaciones
+              uri: lb://EQUIPOS
+              predicates:
+                - Path=/api/instalaciones,/api/instalaciones/**
+
+            - id: ruta-asignaciones
+              uri: lb://EQUIPOS
+              predicates:
+                - Path=/api/asignaciones,/api/asignaciones/**
+
             - id: ruta-protocolos
               uri: lb://PROTOCOLOS
               predicates:

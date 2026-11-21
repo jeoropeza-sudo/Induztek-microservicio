@@ -28,6 +28,11 @@ public class EquipoController {
         return ResponseEntity.ok(service.listarPorCliente(idCliente));
     }
 
+    @GetMapping("/instalacion/{idInstalacion}")
+    public ResponseEntity<List<Equipo>> listarPorInstalacion(@PathVariable Long idInstalacion) {
+        return ResponseEntity.ok(service.listarPorInstalacion(idInstalacion));
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<Equipo> obtenerPorId(@PathVariable Long id) {
         return service.buscarPorId(id)
