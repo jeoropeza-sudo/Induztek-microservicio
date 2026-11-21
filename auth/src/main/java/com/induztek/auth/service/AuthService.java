@@ -34,13 +34,17 @@ public class AuthService {
     private final UsuarioClient usuarioClient;
 
     public RespuestaLogin iniciarSesion(DatosLogin datos) {
-        Credencial credencial = credencialRepository.findByCorreo(datos.correo())
+        String correo = datos.correo() == null ? "" : datos.correo().trim().toLowerCase();
+        Credencial credencial = credencialRepository.findByCorreo(correo)
                 .filter(c -> cifradorContrasenas.matches(datos.contrasena(), c.getContrasena()))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Correo o contraseña incorrectos"));
 
         UsuarioDto usuario = usuarioClient.obtener(credencial.getUsuarioId());
         if (usuario == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "La cuenta no tiene un usuario asociado");
+        }
+        if (!usuario.activo()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "La cuenta está inactiva");
         }
 
         String token = jwtService.crearToken(usuario.id(), usuario.rolId());
@@ -51,20 +55,25 @@ public class AuthService {
         if (datos.usuarioId() == null || vacio(datos.correo())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El usuario y el correo son obligatorios");
         }
+        String correo = datos.correo().trim().toLowerCase();
         validarContrasena(datos.contrasena());
-        if (credencialRepository.existsByCorreo(datos.correo())) {
+        if (credencialRepository.existsByCorreo(correo)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe una cuenta con ese correo");
         }
         if (credencialRepository.existsByUsuarioId(datos.usuarioId())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Ese usuario ya tiene una cuenta");
         }
-        if (usuarioClient.obtener(datos.usuarioId()) == null) {
+        UsuarioDto usuario = usuarioClient.obtener(datos.usuarioId());
+        if (usuario == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El usuario indicado no existe");
+        }
+        if (usuario.correo() == null || !usuario.correo().equalsIgnoreCase(correo)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El correo no coincide con el usuario registrado");
         }
 
         Credencial nueva = Credencial.builder()
                 .usuarioId(datos.usuarioId())
-                .correo(datos.correo())
+                .correo(correo)
                 .contrasena(cifradorContrasenas.encode(datos.contrasena()))
                 .primerIngreso(true)
                 .build();
@@ -72,7 +81,8 @@ public class AuthService {
     }
 
     public void configurar(DatosCambioContrasena datos) {
-        Credencial credencial = credencialRepository.findByCorreo(datos.correo())
+        String correo = datos.correo() == null ? "" : datos.correo().trim().toLowerCase();
+        Credencial credencial = credencialRepository.findByCorreo(correo)
                 .filter(c -> cifradorContrasenas.matches(datos.contrasenaActual(), c.getContrasena()))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "La contraseña actual es incorrecta"));
 
@@ -81,10 +91,12 @@ public class AuthService {
         credencial.setContrasena(cifradorContrasenas.encode(datos.contrasenaNueva()));
         credencial.setPrimerIngreso(false);
         credencialRepository.save(credencial);
+        usuarioClient.completarPrimerIngreso(credencial.getUsuarioId());
     }
 
     public void olvide(DatosOlvide datos) {
-        credencialRepository.findByCorreo(datos.correo()).ifPresent(credencial -> {
+        String correo = datos.correo() == null ? "" : datos.correo().trim().toLowerCase();
+        credencialRepository.findByCorreo(correo).ifPresent(credencial -> {
             String codigo = generarCodigo();
 
             TokenRestablecimiento token = TokenRestablecimiento.builder()
@@ -100,7 +112,8 @@ public class AuthService {
     }
 
     public void restablecer(DatosRestablecer datos) {
-        Credencial credencial = credencialRepository.findByCorreo(datos.correo())
+        String correo = datos.correo() == null ? "" : datos.correo().trim().toLowerCase();
+        Credencial credencial = credencialRepository.findByCorreo(correo)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Código inválido o vencido"));
 
         validarContrasena(datos.contrasenaNueva());
@@ -117,6 +130,7 @@ public class AuthService {
         credencial.setContrasena(cifradorContrasenas.encode(datos.contrasenaNueva()));
         credencial.setPrimerIngreso(false);
         credencialRepository.save(credencial);
+        usuarioClient.completarPrimerIngreso(credencial.getUsuarioId());
     }
 
     private String generarCodigo() {

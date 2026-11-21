@@ -28,6 +28,21 @@ public class Empresa {
     @Column(nullable = false, unique = true, length = 60)
     private String nombre;
 
+    @Column(unique = true, length = 20)
+    private String rut;
+
+    @Column(length = 100)
+    private String giro;
+
     @Column(nullable = false, length = 100)
     private String direccion;
+
+    @Column(name = "contacto_nombre", length = 100)
+    private String contactoNombre;
+
+    @Column(name = "contacto_correo", length = 100)
+    private String contactoCorreo;
+
+    @Column(name = "contacto_telefono", length = 20)
+    private String contactoTelefono;
 }

@@ -28,7 +28,30 @@ public class UsuarioClient {
                     .onErrorResume(WebClientResponseException.NotFound.class, e -> Mono.empty())
                     .block();
         } catch (WebClientRequestException e) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "El servicio de usuarios no está disponible");
+            throw new ResponseStatusException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "El servicio de usuarios no está disponible"
+            );
+        }
+    }
+
+    public void completarPrimerIngreso(Long id) {
+        try {
+            webClient.patch()
+                    .uri("/api/usuarios/{id}/primer-ingreso", id)
+                    .retrieve()
+                    .toBodilessEntity()
+                    .block();
+        } catch (WebClientResponseException.NotFound e) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "El usuario asociado no existe"
+            );
+        } catch (WebClientRequestException e) {
+            throw new ResponseStatusException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "El servicio de usuarios no está disponible"
+            );
         }
     }
 }

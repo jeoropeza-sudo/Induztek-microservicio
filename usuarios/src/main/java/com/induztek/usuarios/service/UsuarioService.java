@@ -22,7 +22,8 @@ public class UsuarioService {
 
     private static final Long ROL_TECNICO = 1L;
     private static final Long ROL_CLIENTE = 2L;
-    private static final Long ROL_ADMINISTRADOR = 3L;
+    private static final Long ROL_INGENIERO = 3L;
+    private static final Long ROL_JEFE_TECNICO = 4L;
 
     private final UsuarioRepository usuarioRepository;
     private final EmpresaClient empresaClient;
@@ -45,20 +46,26 @@ public class UsuarioService {
     }
 
     public UsuarioRespuesta registrar(DatosRegistro datos) {
-        validarDatos(datos.nombre(), datos.apellido(), datos.rut(), datos.telefono(), datos.rolId());
+        validarDatos(datos.nombre(), datos.apellido(), datos.rut(), datos.correo(), datos.telefono(), datos.rolId());
         validarEmpresa(datos.empresaId());
 
         if (usuarioRepository.existsByRut(datos.rut())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un usuario con ese RUT");
         }
+        if (usuarioRepository.existsByCorreoIgnoreCase(datos.correo().trim())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un usuario con ese correo");
+        }
 
         Usuario nuevo = Usuario.builder()
-                .nombre(datos.nombre())
-                .apellido(datos.apellido())
-                .rut(datos.rut())
-                .telefono(datos.telefono())
+                .nombre(datos.nombre().trim())
+                .apellido(datos.apellido().trim())
+                .rut(datos.rut().trim())
+                .correo(datos.correo().trim().toLowerCase())
+                .telefono(datos.telefono().trim())
                 .empresaId(datos.empresaId())
                 .rolId(datos.rolId())
+                .activo(true)
+                .debeCambiarClave(true)
                 .build();
         return aRespuesta(usuarioRepository.save(nuevo));
     }
@@ -66,17 +73,21 @@ public class UsuarioService {
     public UsuarioRespuesta actualizar(Long id, DatosActualizacion datos) {
         Usuario usuario = buscar(id);
 
-        validarDatos(datos.nombre(), datos.apellido(), datos.rut(), datos.telefono(), datos.rolId());
+        validarDatos(datos.nombre(), datos.apellido(), datos.rut(), datos.correo(), datos.telefono(), datos.rolId());
         validarEmpresa(datos.empresaId());
 
         if (usuarioRepository.existsByRutAndIdNot(datos.rut(), id)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un usuario con ese RUT");
         }
+        if (usuarioRepository.existsByCorreoIgnoreCaseAndIdNot(datos.correo().trim(), id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un usuario con ese correo");
+        }
 
-        usuario.setNombre(datos.nombre());
-        usuario.setApellido(datos.apellido());
-        usuario.setRut(datos.rut());
-        usuario.setTelefono(datos.telefono());
+        usuario.setNombre(datos.nombre().trim());
+        usuario.setApellido(datos.apellido().trim());
+        usuario.setRut(datos.rut().trim());
+        usuario.setCorreo(datos.correo().trim().toLowerCase());
+        usuario.setTelefono(datos.telefono().trim());
         usuario.setEmpresaId(datos.empresaId());
         usuario.setRolId(datos.rolId());
         return aRespuesta(usuarioRepository.save(usuario));
@@ -86,16 +97,26 @@ public class UsuarioService {
         usuarioRepository.delete(buscar(id));
     }
 
+    public void completarPrimerIngreso(Long id) {
+        Usuario usuario = buscar(id);
+        usuario.setDebeCambiarClave(false);
+        usuarioRepository.save(usuario);
+    }
+
     private Usuario buscar(Long id) {
         return usuarioRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Usuario no encontrado"));
     }
 
-    private void validarDatos(String nombre, String apellido, String rut, String telefono, Long rolId) {
-        if (vacio(nombre) || vacio(apellido) || vacio(rut) || vacio(telefono)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nombre, apellido, RUT y teléfono son obligatorios");
+    private void validarDatos(String nombre, String apellido, String rut, String correo, String telefono, Long rolId) {
+        if (vacio(nombre) || vacio(apellido) || vacio(rut) || vacio(correo) || vacio(telefono)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nombre, apellido, RUT, correo y teléfono son obligatorios");
         }
-        if (!ROL_TECNICO.equals(rolId) && !ROL_CLIENTE.equals(rolId) && !ROL_ADMINISTRADOR.equals(rolId)) {
+        if (!correo.trim().matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ingresa un correo electrónico válido");
+        }
+        if (!ROL_TECNICO.equals(rolId) && !ROL_CLIENTE.equals(rolId)
+                && !ROL_INGENIERO.equals(rolId) && !ROL_JEFE_TECNICO.equals(rolId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El rol indicado no existe");
         }
     }
@@ -112,7 +133,8 @@ public class UsuarioService {
     private String nombreRol(Long rolId) {
         if (ROL_TECNICO.equals(rolId)) return "Técnico";
         if (ROL_CLIENTE.equals(rolId)) return "Cliente";
-        if (ROL_ADMINISTRADOR.equals(rolId)) return "Administrador";
+        if (ROL_INGENIERO.equals(rolId)) return "Ingeniería";
+        if (ROL_JEFE_TECNICO.equals(rolId)) return "Jefatura Técnica";
         return "";
     }
 
@@ -127,11 +149,14 @@ public class UsuarioService {
                 usuario.getNombre(),
                 usuario.getApellido(),
                 usuario.getRut(),
+                usuario.getCorreo(),
                 usuario.getTelefono(),
                 usuario.getEmpresaId(),
                 empresaNombre,
                 usuario.getRolId(),
                 nombreRol(usuario.getRolId()),
+                usuario.isActivo(),
+                usuario.isDebeCambiarClave(),
                 null
         );
     }

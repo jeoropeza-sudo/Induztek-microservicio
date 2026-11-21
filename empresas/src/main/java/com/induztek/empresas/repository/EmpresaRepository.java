@@ -12,4 +12,8 @@ public interface EmpresaRepository extends JpaRepository<Empresa, Long> {
     boolean existsByNombreIgnoreCase(String nombre);
 
     boolean existsByNombreIgnoreCaseAndIdNot(String nombre, Long id);
+
+    boolean existsByRutIgnoreCase(String rut);
+
+    boolean existsByRutIgnoreCaseAndIdNot(String rut, Long id);
 }

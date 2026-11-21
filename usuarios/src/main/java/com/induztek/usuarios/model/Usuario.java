@@ -34,6 +34,9 @@ public class Usuario {
     @Column(nullable = false, unique = true, length = 12)
     private String rut;
 
+    @Column(unique = true, length = 100)
+    private String correo;
+
     @Column(nullable = false, length = 12)
     private String telefono;
 
@@ -42,6 +45,14 @@ public class Usuario {
 
     @Column(name = "rol_id", nullable = false)
     private Long rolId;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean activo = true;
+
+    @Column(name = "debe_cambiar_clave", nullable = false)
+    @Builder.Default
+    private boolean debeCambiarClave = true;
 
     @Column(length = 100)
     private String avatar;
