@@ -8,5 +8,7 @@ public class EquipoExternoDTO {
     private String codigo;
     private String tipo;
     private String instalacion;
+    private String tag;
+    private Long idInstalacion;
     private Long idCliente;
 }

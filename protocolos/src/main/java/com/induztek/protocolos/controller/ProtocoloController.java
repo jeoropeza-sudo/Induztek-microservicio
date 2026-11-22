@@ -1,6 +1,8 @@
 package com.induztek.protocolos.controller;
 
 import com.induztek.protocolos.dto.ProtocoloDetalleResponse;
+import com.induztek.protocolos.dto.CrearProtocoloRequest;
+import com.induztek.protocolos.model.Medicion;
 import com.induztek.protocolos.model.Protocolo;
 import com.induztek.protocolos.service.ProtocoloService;
 import jakarta.validation.Valid;
@@ -40,9 +42,26 @@ public class ProtocoloController {
         return ResponseEntity.ok(service.listarPorCliente(idCliente));
     }
 
+    @GetMapping("/visita/{idVisita}")
+    public ResponseEntity<List<ProtocoloDetalleResponse>> listarPorVisita(@PathVariable Long idVisita) {
+        return ResponseEntity.ok(service.listarPorVisita(idVisita));
+    }
+
+    @GetMapping("/{id}/mediciones")
+    public ResponseEntity<List<Medicion>> listarMediciones(@PathVariable Long id) {
+        return ResponseEntity.ok(service.listarMediciones(id));
+    }
+
     @PostMapping
     public ResponseEntity<Protocolo> crear(@Valid @RequestBody Protocolo protocolo) {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.guardar(protocolo));
+    }
+
+    @PostMapping("/con-mediciones")
+    public ResponseEntity<Protocolo> crearConMediciones(
+            @Valid @RequestBody CrearProtocoloRequest request
+    ) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.guardarConMediciones(request));
     }
 
     @PatchMapping("/{id}/formalizar")

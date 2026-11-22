@@ -13,7 +13,7 @@ import java.util.List;
 
 @Component
 @RequiredArgsConstructor
-public class DataSeeder implements CommandLineRunner {
+public class DataLoader implements CommandLineRunner {
 
     private final InstrumentoRepository instrumentoRepository;
     private final CalibracionRepository calibracionRepository;

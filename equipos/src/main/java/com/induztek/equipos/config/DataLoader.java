@@ -12,7 +12,7 @@ import java.util.List;
 
 @Component
 @RequiredArgsConstructor
-public class DataSeeder implements CommandLineRunner {
+public class DataLoader implements CommandLineRunner {
 
     private final EquipoRepository repository;
     private final InstalacionRepository instalacionRepository;

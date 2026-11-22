@@ -18,6 +18,12 @@ public class Protocolo {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long idProtocolo;
 
+    @Column(name = "id_visita")
+    private Long idVisita;
+
+    @Column(name = "uuid_sync", length = 36, unique = true)
+    private String uuidSync;
+
     @NotNull(message = "El ID del equipo es obligatorio")
     private Long idEquipo;
 
@@ -47,4 +53,10 @@ public class Protocolo {
     @Lob
     @Column(columnDefinition = "LONGBLOB")
     private byte[] foto;
+
+    @Column(name = "resultado_global", length = 20)
+    private String resultadoGlobal;
+
+    @Column(name = "evidencia_equipo", columnDefinition = "LONGBLOB")
+    private byte[] evidenciaEquipo;
 }

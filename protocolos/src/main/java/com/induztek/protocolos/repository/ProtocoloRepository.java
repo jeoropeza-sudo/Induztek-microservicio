@@ -8,4 +8,7 @@ public interface ProtocoloRepository extends JpaRepository<Protocolo, Long> {
     List<Protocolo> findByIdEquipoOrderByIdProtocoloDesc(Long idEquipo);
     List<Protocolo> findByIdEquipoInOrderByIdProtocoloDesc(List<Long> idsEquipos);
     List<Protocolo> findByIdTecnicoOrderByIdProtocoloDesc(Long idTecnico);
+    List<Protocolo> findByIdVisitaOrderByIdProtocoloDesc(Long idVisita);
+    boolean existsByUuidSync(String uuidSync);
+    java.util.Optional<Protocolo> findByUuidSync(String uuidSync);
 }
