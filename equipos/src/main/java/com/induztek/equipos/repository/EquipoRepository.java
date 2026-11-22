@@ -7,5 +7,10 @@ import java.util.List;
 public interface EquipoRepository extends JpaRepository<Equipo, Long> {
     List<Equipo> findByIdCliente(Long idCliente);
     List<Equipo> findByIdInstalacion(Long idInstalacion);
-    boolean existsByCodigo(String codigo);
+    boolean existsByIdInstalacionAndTagIgnoreCase(Long idInstalacion, String tag);
+    boolean existsByIdInstalacionAndTagIgnoreCaseAndIdEquipoNot(
+            Long idInstalacion,
+            String tag,
+            Long idEquipo
+    );
 }
