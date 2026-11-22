@@ -16,6 +16,11 @@ spring:
               predicates:
                 - Path=/api/auth,/api/auth/**
 
+            - id: ruta-roles
+              uri: lb://USUARIOS
+              predicates:
+                - Path=/api/roles,/api/roles/**
+
             - id: ruta-usuarios
               uri: lb://USUARIOS
               predicates:

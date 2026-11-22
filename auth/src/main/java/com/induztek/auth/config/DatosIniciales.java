@@ -23,7 +23,8 @@ public class DatosIniciales implements CommandLineRunner {
                     credencial(1L, "tecnico@gmail.com"),
                     credencial(2L, "cliente@gmail.com"),
                     credencial(3L, "cliente2@gmail.com"),
-                    credencial(4L, "admin@gmail.com")
+                    credencial(4L, "ingenieria@gmail.com"),
+                    credencial(5L, "jefatura@gmail.com")
             ));
         }
     }

@@ -12,8 +12,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import com.induztek.auth.dto.RespuestaAltaCredencial;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -31,6 +34,18 @@ public class AuthController {
     @ResponseStatus(HttpStatus.CREATED)
     public void crearCredencial(@RequestBody DatosCredencial datos) {
         authService.crearCredencial(datos);
+    }
+
+    @PostMapping("/credenciales/alta")
+    @ResponseStatus(HttpStatus.CREATED)
+    public RespuestaAltaCredencial crearCredencialTemporal(@RequestBody DatosCredencial datos) {
+        return authService.crearCredencialTemporal(datos);
+    }
+
+    @DeleteMapping("/credenciales/usuario/{usuarioId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void eliminarCredencial(@PathVariable Long usuarioId) {
+        authService.eliminarCredencial(usuarioId);
     }
 
     @PostMapping("/configurar")

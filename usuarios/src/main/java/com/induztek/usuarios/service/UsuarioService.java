@@ -1,6 +1,11 @@
 package com.induztek.usuarios.service;
 
 import com.induztek.usuarios.client.EmpresaClient;
+import com.induztek.usuarios.client.AuthClient;
+import com.induztek.usuarios.dto.DatosAltaCuenta;
+import com.induztek.usuarios.dto.RespuestaAltaCuenta;
+import com.induztek.usuarios.model.AuditoriaUsuario;
+import com.induztek.usuarios.repository.AuditoriaUsuarioRepository;
 import com.induztek.usuarios.dto.DatosActualizacion;
 import com.induztek.usuarios.dto.DatosRegistro;
 import com.induztek.usuarios.dto.EmpresaDto;
@@ -27,6 +32,8 @@ public class UsuarioService {
 
     private final UsuarioRepository usuarioRepository;
     private final EmpresaClient empresaClient;
+    private final AuthClient authClient;
+    private final AuditoriaUsuarioRepository auditoriaRepository;
 
     public List<UsuarioRespuesta> listar(String buscar) {
         List<Usuario> usuarios = (buscar == null || buscar.isBlank())
@@ -70,6 +77,59 @@ public class UsuarioService {
         return aRespuesta(usuarioRepository.save(nuevo));
     }
 
+    public RespuestaAltaCuenta alta(DatosAltaCuenta datos) {
+        validarActorAdministrativo(datos.actorId());
+        DatosRegistro registro = new DatosRegistro(
+                datos.nombre(),
+                datos.apellido(),
+                datos.rut(),
+                datos.correo(),
+                datos.telefono(),
+                datos.empresaId(),
+                datos.rolId()
+        );
+        validarDatos(registro.nombre(), registro.apellido(), registro.rut(), registro.correo(), registro.telefono(), registro.rolId());
+        validarEmpresa(registro.empresaId());
+
+        if (!validarRut(registro.rut())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ingresa un RUT válido");
+        }
+        if (usuarioRepository.existsByRut(registro.rut().trim())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un usuario con ese RUT");
+        }
+        if (usuarioRepository.existsByCorreoIgnoreCase(registro.correo().trim())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un usuario con ese correo");
+        }
+
+        Usuario nuevo = Usuario.builder()
+                .nombre(registro.nombre().trim())
+                .apellido(registro.apellido().trim())
+                .rut(registro.rut().trim())
+                .correo(registro.correo().trim().toLowerCase())
+                .telefono(registro.telefono().trim())
+                .empresaId(registro.empresaId())
+                .rolId(registro.rolId())
+                .activo(true)
+                .debeCambiarClave(true)
+                .build();
+
+        Usuario guardado;
+        try {
+            guardado = usuarioRepository.save(nuevo);
+            AuthClient.RespuestaAltaCredencial credencial =
+                    authClient.crearCredencialTemporal(guardado.getId(), guardado.getCorreo());
+            registrarAuditoria(datos.actorId(), guardado.getId(), "ALTA_CUENTA",
+                    "Cuenta creada con rol " + nombreRol(guardado.getRolId()));
+            return new RespuestaAltaCuenta(aRespuesta(guardado), credencial.contrasenaTemporal());
+        } catch (RuntimeException error) {
+            if (nuevo.getId() != null) {
+                authClient.eliminarCredencial(nuevo.getId());
+                usuarioRepository.delete(nuevo);
+            }
+            throw error;
+        }
+    }
+
     public UsuarioRespuesta actualizar(Long id, DatosActualizacion datos) {
         Usuario usuario = buscar(id);
 
@@ -94,13 +154,32 @@ public class UsuarioService {
     }
 
     public void eliminar(Long id) {
-        usuarioRepository.delete(buscar(id));
+        Usuario usuario = buscar(id);
+        usuario.setActivo(false);
+        usuarioRepository.save(usuario);
+        registrarAuditoria(null, usuario.getId(), "BAJA_CUENTA", "Cuenta dada de baja");
+    }
+
+    public UsuarioRespuesta cambiarEstado(Long id, boolean activo, Long actorId) {
+        validarActorAdministrativo(actorId);
+        Usuario usuario = buscar(id);
+        usuario.setActivo(activo);
+        usuarioRepository.save(usuario);
+        registrarAuditoria(actorId, usuario.getId(),
+                activo ? "ACTIVAR_CUENTA" : "DESACTIVAR_CUENTA",
+                activo ? "Cuenta activada" : "Cuenta desactivada");
+        return aRespuesta(usuario);
     }
 
     public void completarPrimerIngreso(Long id) {
         Usuario usuario = buscar(id);
         usuario.setDebeCambiarClave(false);
         usuarioRepository.save(usuario);
+        registrarAuditoria(null, usuario.getId(), "CAMBIO_CLAVE", "Primer cambio de clave completado");
+    }
+
+    public List<AuditoriaUsuario> listarAuditoria(Long usuarioId) {
+        return auditoriaRepository.findByUsuarioAfectadoIdOrderByFechaDesc(usuarioId);
     }
 
     private Usuario buscar(Long id) {
@@ -111,6 +190,9 @@ public class UsuarioService {
     private void validarDatos(String nombre, String apellido, String rut, String correo, String telefono, Long rolId) {
         if (vacio(nombre) || vacio(apellido) || vacio(rut) || vacio(correo) || vacio(telefono)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nombre, apellido, RUT, correo y teléfono son obligatorios");
+        }
+        if (!validarRut(rut)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ingresa un RUT válido");
         }
         if (!correo.trim().matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ingresa un correo electrónico válido");
@@ -136,6 +218,44 @@ public class UsuarioService {
         if (ROL_INGENIERO.equals(rolId)) return "Ingeniería";
         if (ROL_JEFE_TECNICO.equals(rolId)) return "Jefatura Técnica";
         return "";
+    }
+
+    private void validarActorAdministrativo(Long actorId) {
+        if (actorId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El actor que crea la cuenta es obligatorio");
+        }
+        Usuario actor = usuarioRepository.findById(actorId)
+                .filter(Usuario::isActivo)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "El usuario administrador no existe"));
+        if (!ROL_INGENIERO.equals(actor.getRolId()) && !ROL_JEFE_TECNICO.equals(actor.getRolId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo Ingeniería o Jefatura Técnica pueden crear cuentas");
+        }
+    }
+
+    private void registrarAuditoria(Long actorId, Long usuarioId, String accion, String detalle) {
+        auditoriaRepository.save(AuditoriaUsuario.builder()
+                .actorId(actorId)
+                .usuarioAfectadoId(usuarioId)
+                .accion(accion)
+                .detalle(detalle)
+                .build());
+    }
+
+    private boolean validarRut(String rut) {
+        if (rut == null) return false;
+        String limpio = rut.replace(".", "").replace("-", "").toUpperCase();
+        if (!limpio.matches("\\d{7,8}[0-9K]")) return false;
+        String cuerpo = limpio.substring(0, limpio.length() - 1);
+        char dvIngresado = limpio.charAt(limpio.length() - 1);
+        int suma = 0;
+        int factor = 2;
+        for (int i = cuerpo.length() - 1; i >= 0; i--) {
+            suma += (cuerpo.charAt(i) - '0') * factor;
+            factor = factor == 7 ? 2 : factor + 1;
+        }
+        int resto = 11 - (suma % 11);
+        char dvCalculado = resto == 11 ? '0' : resto == 10 ? 'K' : (char) ('0' + resto);
+        return dvCalculado == dvIngresado;
     }
 
     private UsuarioRespuesta aRespuesta(Usuario usuario) {

@@ -3,6 +3,9 @@ package com.induztek.usuarios.controller;
 import com.induztek.usuarios.dto.DatosActualizacion;
 import com.induztek.usuarios.dto.DatosRegistro;
 import com.induztek.usuarios.dto.UsuarioRespuesta;
+import com.induztek.usuarios.dto.DatosAltaCuenta;
+import com.induztek.usuarios.dto.RespuestaAltaCuenta;
+import com.induztek.usuarios.model.AuditoriaUsuario;
 import com.induztek.usuarios.service.UsuarioService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -41,6 +44,26 @@ public class UsuarioController {
     @ResponseStatus(HttpStatus.CREATED)
     public UsuarioRespuesta registrar(@RequestBody DatosRegistro datos) {
         return usuarioService.registrar(datos);
+    }
+
+    @PostMapping("/alta")
+    @ResponseStatus(HttpStatus.CREATED)
+    public RespuestaAltaCuenta alta(@RequestBody DatosAltaCuenta datos) {
+        return usuarioService.alta(datos);
+    }
+
+    @PatchMapping("/{id}/estado")
+    public UsuarioRespuesta cambiarEstado(
+            @PathVariable Long id,
+            @RequestParam boolean activo,
+            @RequestParam Long actorId
+    ) {
+        return usuarioService.cambiarEstado(id, activo, actorId);
+    }
+
+    @GetMapping("/{id}/auditoria")
+    public List<AuditoriaUsuario> auditoria(@PathVariable Long id) {
+        return usuarioService.listarAuditoria(id);
     }
 
     @PutMapping("/{id}")

@@ -7,6 +7,7 @@ import com.induztek.auth.dto.DatosLogin;
 import com.induztek.auth.dto.DatosOlvide;
 import com.induztek.auth.dto.DatosRestablecer;
 import com.induztek.auth.dto.RespuestaLogin;
+import com.induztek.auth.dto.RespuestaAltaCredencial;
 import com.induztek.auth.dto.UsuarioDto;
 import com.induztek.auth.model.Credencial;
 import com.induztek.auth.model.TokenRestablecimiento;
@@ -80,6 +81,40 @@ public class AuthService {
         credencialRepository.save(nueva);
     }
 
+    public RespuestaAltaCredencial crearCredencialTemporal(DatosCredencial datos) {
+        if (datos.usuarioId() == null || vacio(datos.correo())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El usuario y el correo son obligatorios");
+        }
+        String correo = datos.correo().trim().toLowerCase();
+        UsuarioDto usuario = usuarioClient.obtener(datos.usuarioId());
+        if (usuario == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El usuario indicado no existe");
+        }
+        if (usuario.correo() == null || !usuario.correo().equalsIgnoreCase(correo)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El correo no coincide con el usuario registrado");
+        }
+        if (credencialRepository.existsByCorreo(correo)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe una cuenta con ese correo");
+        }
+        if (credencialRepository.existsByUsuarioId(datos.usuarioId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ese usuario ya tiene una cuenta");
+        }
+
+        String contrasenaTemporal = generarContrasenaTemporal();
+        Credencial nueva = Credencial.builder()
+                .usuarioId(datos.usuarioId())
+                .correo(correo)
+                .contrasena(cifradorContrasenas.encode(contrasenaTemporal))
+                .primerIngreso(true)
+                .build();
+        credencialRepository.save(nueva);
+        return new RespuestaAltaCredencial(contrasenaTemporal);
+    }
+
+    public void eliminarCredencial(Long usuarioId) {
+        credencialRepository.findByUsuarioId(usuarioId).ifPresent(credencialRepository::delete);
+    }
+
     public void configurar(DatosCambioContrasena datos) {
         String correo = datos.correo() == null ? "" : datos.correo().trim().toLowerCase();
         Credencial credencial = credencialRepository.findByCorreo(correo)
@@ -136,6 +171,16 @@ public class AuthService {
     private String generarCodigo() {
         int numero = new SecureRandom().nextInt(1_000_000);
         return String.format("%06d", numero);
+    }
+
+    private String generarContrasenaTemporal() {
+        char[] caracteres = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789".toCharArray();
+        SecureRandom random = new SecureRandom();
+        StringBuilder password = new StringBuilder("Indz");
+        for (int i = 0; i < 9; i++) {
+            password.append(caracteres[random.nextInt(caracteres.length)]);
+        }
+        return password.toString();
     }
 
     private void validarContrasena(String contrasena) {
