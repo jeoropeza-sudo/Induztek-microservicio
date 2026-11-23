@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -24,13 +25,20 @@ public class EmpresaController {
     private final EmpresaService empresaService;
 
     @GetMapping
-    public List<Empresa> listar() {
-        return empresaService.listar();
+    public List<Empresa> listar(
+            @RequestAttribute(value = "actorId", required = false) Long actorId,
+            @RequestAttribute("actorRoleId") Long actorRoleId
+    ) {
+        return empresaService.listar(actorId, actorRoleId);
     }
 
     @GetMapping("/{id}")
-    public Empresa obtener(@PathVariable Long id) {
-        return empresaService.obtener(id);
+    public Empresa obtener(
+            @PathVariable Long id,
+            @RequestAttribute(value = "actorId", required = false) Long actorId,
+            @RequestAttribute("actorRoleId") Long actorRoleId
+    ) {
+        return empresaService.obtener(id, actorId, actorRoleId);
     }
 
     @PostMapping

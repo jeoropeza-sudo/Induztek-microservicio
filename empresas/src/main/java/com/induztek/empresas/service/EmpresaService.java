@@ -1,6 +1,7 @@
 package com.induztek.empresas.service;
 
 import com.induztek.empresas.dto.DatosEmpresa;
+import com.induztek.empresas.client.UsuarioClient;
 import com.induztek.empresas.model.Empresa;
 import com.induztek.empresas.repository.EmpresaRepository;
 import lombok.RequiredArgsConstructor;
@@ -15,12 +16,32 @@ import java.util.List;
 public class EmpresaService {
 
     private final EmpresaRepository empresaRepository;
+    private final UsuarioClient usuarioClient;
 
-    public List<Empresa> listar() {
-        return empresaRepository.findAllByOrderByNombreAsc();
+    public List<Empresa> listar(Long actorId, Long actorRoleId) {
+        if (Long.valueOf(3L).equals(actorRoleId) || Long.valueOf(4L).equals(actorRoleId)) {
+            return empresaRepository.findAllByOrderByNombreAsc();
+        }
+        UsuarioClient.UsuarioReferencia actor = usuarioClient.obtener(actorId);
+        if (actor == null || !actor.activo() || actor.empresaId() == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No se pudo determinar la empresa del usuario");
+        }
+        return List.of(obtener(actor.empresaId()));
     }
 
-    public Empresa obtener(Long id) {
+    public Empresa obtener(Long id, Long actorId, Long actorRoleId) {
+        Empresa empresa = obtener(id);
+        if (Long.valueOf(3L).equals(actorRoleId) || Long.valueOf(4L).equals(actorRoleId)) {
+            return empresa;
+        }
+        UsuarioClient.UsuarioReferencia actor = usuarioClient.obtener(actorId);
+        if (actor == null || !actor.activo() || !id.equals(actor.empresaId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No puedes consultar otra empresa");
+        }
+        return empresa;
+    }
+
+    private Empresa obtener(Long id) {
         return empresaRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Empresa no encontrada"));
     }
@@ -84,6 +105,29 @@ public class EmpresaService {
         if (!datos.contactoCorreo().trim().matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ingresa un correo de contacto válido");
         }
+        if (!validarRut(datos.rut())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ingresa un RUT de empresa válido");
+        }
+    }
+
+    private boolean validarRut(String rut) {
+        String limpio = rut.replace(".", "").replace("-", "").trim().toUpperCase();
+        if (!limpio.matches("\\d{7,8}[0-9K]")) {
+            return false;
+        }
+
+        String cuerpo = limpio.substring(0, limpio.length() - 1);
+        char digitoIngresado = limpio.charAt(limpio.length() - 1);
+        int suma = 0;
+        int factor = 2;
+        for (int indice = cuerpo.length() - 1; indice >= 0; indice--) {
+            suma += (cuerpo.charAt(indice) - '0') * factor;
+            factor = factor == 7 ? 2 : factor + 1;
+        }
+
+        int resto = 11 - (suma % 11);
+        char digitoCalculado = resto == 11 ? '0' : resto == 10 ? 'K' : (char) ('0' + resto);
+        return digitoCalculado == digitoIngresado;
     }
 
     private boolean vacio(String texto) {
