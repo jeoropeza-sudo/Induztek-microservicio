@@ -2,6 +2,7 @@ package com.induztek.protocolos.service;
 
 import com.induztek.protocolos.client.EquipoClient;
 import com.induztek.protocolos.client.UsuarioClient;
+import com.induztek.protocolos.client.InstrumentoClient;
 import com.induztek.protocolos.dto.EquipoExternoDTO;
 import com.induztek.protocolos.dto.ProtocoloDetalleResponse;
 import com.induztek.protocolos.dto.UsuarioExternoDTO;
@@ -17,6 +18,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -29,6 +33,8 @@ public class ProtocoloService {
     private final EquipoClient equipoClient;
     private final UsuarioClient usuarioClient;
     private final MedicionRepository medicionRepository;
+    private final InstrumentoClient instrumentoClient;
+    private final ActorContext actorContext;
 
     public ProtocoloDetalleResponse enriquecerDetalle(Protocolo p) {
         EquipoExternoDTO equipo = equipoClient.obtenerPorId(p.getIdEquipo());
@@ -44,14 +50,17 @@ public class ProtocoloService {
     }
 
     public List<ProtocoloDetalleResponse> listarTodos() {
-        return repository.findAll().stream().map(this::enriquecerDetalle).toList();
+        return filtrarVisibles(repository.findAll()).stream().map(this::enriquecerDetalle).toList();
     }
 
     public Optional<ProtocoloDetalleResponse> buscarPorId(Long id) {
-        return repository.findById(id).map(this::enriquecerDetalle);
+        Optional<Protocolo> protocolo = repository.findById(id);
+        protocolo.ifPresent(registro -> validarAccesoEquipo(registro.getIdEquipo()));
+        return protocolo.map(this::enriquecerDetalle);
     }
 
     public List<ProtocoloDetalleResponse> listarPorEquipo(Long idEquipo) {
+        validarAccesoEquipo(idEquipo);
         return repository.findByIdEquipoOrderByIdProtocoloDesc(idEquipo)
                 .stream()
                 .map(this::enriquecerDetalle)
@@ -59,6 +68,10 @@ public class ProtocoloService {
     }
 
     public List<ProtocoloDetalleResponse> listarPorCliente(Long idCliente) {
+        if (Long.valueOf(2L).equals(actorContext.rolId())
+                && !idCliente.equals(actorContext.usuarioId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No puedes consultar protocolos de otro cliente");
+        }
         List<EquipoExternoDTO> equiposCliente = equipoClient.listarPorCliente(idCliente);
         if (equiposCliente == null || equiposCliente.isEmpty()) {
             return Collections.emptyList();
@@ -68,23 +81,23 @@ public class ProtocoloService {
                 .map(EquipoExternoDTO::getIdEquipo)
                 .toList();
 
-        return repository.findByIdEquipoInOrderByIdProtocoloDesc(idsEquipos)
+        return filtrarVisibles(repository.findByIdEquipoInOrderByIdProtocoloDesc(idsEquipos))
                 .stream()
                 .map(this::enriquecerDetalle)
                 .toList();
     }
 
     public List<ProtocoloDetalleResponse> listarPorVisita(Long idVisita) {
-        return repository.findByIdVisitaOrderByIdProtocoloDesc(idVisita)
+        return filtrarVisibles(repository.findByIdVisitaOrderByIdProtocoloDesc(idVisita))
                 .stream()
                 .map(this::enriquecerDetalle)
                 .toList();
     }
 
     public List<Medicion> listarMediciones(Long idProtocolo) {
-        if (!repository.existsById(idProtocolo)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Protocolo no encontrado");
-        }
+        Protocolo protocolo = repository.findById(idProtocolo)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Protocolo no encontrado"));
+        validarAccesoEquipo(protocolo.getIdEquipo());
         return medicionRepository.findByIdProtocoloOrderByIdMedicionAsc(idProtocolo);
     }
 
@@ -101,6 +114,15 @@ public class ProtocoloService {
         if (protocolo.getIdTecnico() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El ID del técnico es obligatorio");
         }
+        validarAccesoEquipo(protocolo.getIdEquipo());
+        if (protocolo.getIdVisita() != null
+                && !equipoClient.visitaContieneEquipo(protocolo.getIdVisita(), protocolo.getIdEquipo())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El equipo no pertenece a la visita indicada");
+        }
+        if (Long.valueOf(1L).equals(actorContext.rolId())
+                && !actorContext.usuarioId().equals(protocolo.getIdTecnico())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo puedes registrar protocolos como tu usuario");
+        }
         if (protocolo.getFechaHora() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La fecha y hora son obligatorias");
         }
@@ -109,6 +131,7 @@ public class ProtocoloService {
         } else {
             Optional<Protocolo> existente = repository.findByUuidSync(protocolo.getUuidSync());
             if (existente.isPresent()) {
+                validarAccesoEquipo(existente.get().getIdEquipo());
                 return existente.get();
             }
         }
@@ -135,6 +158,7 @@ public class ProtocoloService {
 
     public Optional<Protocolo> formalizar(Long id) {
         return repository.findById(id).map(existente -> {
+            validarAccesoEquipo(existente.getIdEquipo());
             if ("FORMALIZADO".equals(existente.getEstado())) {
                 return existente;
             }
@@ -145,6 +169,19 @@ public class ProtocoloService {
                         "Solo puede formalizarse un protocolo registrado en terreno"
                 );
             }
+            List<Medicion> mediciones = medicionRepository.findByIdProtocoloOrderByIdMedicionAsc(id);
+            if (mediciones.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "No se puede formalizar sin mediciones");
+            }
+            LocalDate fechaMedicion = Instant.ofEpochMilli(existente.getFechaHora())
+                    .atZone(ZoneId.systemDefault())
+                    .toLocalDate();
+            for (Medicion medicion : mediciones) {
+                if (medicion.getIdInstrumento() == null) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Cada medición debe indicar el instrumento utilizado");
+                }
+                instrumentoClient.validarVigencia(medicion.getIdInstrumento(), fechaMedicion);
+            }
             existente.setEstado("FORMALIZADO");
             return repository.save(existente);
         });
@@ -152,11 +189,49 @@ public class ProtocoloService {
 
     @Transactional
     public boolean eliminar(Long id) {
-        if (!repository.existsById(id)) {
-            return false;
-        }
+        Protocolo protocolo = repository.findById(id).orElse(null);
+        if (protocolo == null) return false;
+        validarAccesoEquipo(protocolo.getIdEquipo());
         medicionRepository.deleteByIdProtocolo(id);
         repository.deleteById(id);
         return true;
+    }
+
+    private List<Protocolo> filtrarVisibles(List<Protocolo> protocolos) {
+        List<Protocolo> resultado = new java.util.ArrayList<>();
+        for (Protocolo protocolo : protocolos) {
+            try {
+                validarAccesoEquipo(protocolo.getIdEquipo());
+                resultado.add(protocolo);
+            } catch (ResponseStatusException e) {
+                if (e.getStatusCode() != HttpStatus.FORBIDDEN) {
+                    throw e;
+                }
+            }
+        }
+        return resultado;
+    }
+
+    private void validarAccesoEquipo(Long idEquipo) {
+        if (actorContext.esAdministrador()) {
+            return;
+        }
+
+        Long rolId = actorContext.rolId();
+        Long actorId = actorContext.usuarioId();
+        List<EquipoExternoDTO> equiposVisibles;
+        if (Long.valueOf(1L).equals(rolId)) {
+            equiposVisibles = equipoClient.listarPorTecnico(actorId);
+        } else if (Long.valueOf(2L).equals(rolId)) {
+            equiposVisibles = equipoClient.listarPorCliente(actorId);
+        } else {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No tienes acceso a este protocolo");
+        }
+
+        boolean autorizado = equiposVisibles != null && equiposVisibles.stream()
+                .anyMatch(equipo -> idEquipo.equals(equipo.getIdEquipo()));
+        if (!autorizado) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No tienes acceso al equipo asociado al protocolo");
+        }
     }
 }

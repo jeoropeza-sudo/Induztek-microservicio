@@ -1,26 +1,40 @@
 package com.induztek.protocolos.client;
 
 import com.induztek.protocolos.dto.UsuarioExternoDTO;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+import org.springframework.web.server.ResponseStatusException;
 
 @Component
-@RequiredArgsConstructor
 public class UsuarioClient {
 
-    private final WebClient.Builder webClientBuilder;
+    private final WebClient webClient;
+
+    public UsuarioClient(
+            @Value("${usuarios.service.url:http://localhost:8082}") String usuariosUrl,
+            @Value("${security.internal-token}") String internalToken
+    ) {
+        webClient = WebClient.builder()
+                .baseUrl(usuariosUrl)
+                .defaultHeader("X-Internal-Token", internalToken)
+                .build();
+    }
 
     public UsuarioExternoDTO obtenerPorId(Long idUsuario) {
         try {
-            return webClientBuilder.build()
-                    .get()
-                    .uri("http://usuarios/api/usuarios/" + idUsuario)
+            return webClient.get()
+                    .uri("/api/usuarios/{id}", idUsuario)
                     .retrieve()
                     .bodyToMono(UsuarioExternoDTO.class)
                     .block();
-        } catch (Exception e) {
+        } catch (WebClientResponseException.NotFound e) {
             return null;
+        } catch (WebClientRequestException e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "El servicio de usuarios no está disponible");
         }
     }
 }
