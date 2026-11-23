@@ -17,8 +17,14 @@ public class EmpresaClient {
 
     private final WebClient webClient;
 
-    public EmpresaClient(@Value("${empresas.service.url}") String empresasUrl) {
-        this.webClient = WebClient.builder().baseUrl(empresasUrl).build();
+    public EmpresaClient(
+            @Value("${empresas.service.url}") String empresasUrl,
+            @Value("${security.internal-token}") String internalToken
+    ) {
+        this.webClient = WebClient.builder()
+                .baseUrl(empresasUrl)
+                .defaultHeader("X-Internal-Token", internalToken)
+                .build();
     }
 
     public List<EmpresaDto> listar() {

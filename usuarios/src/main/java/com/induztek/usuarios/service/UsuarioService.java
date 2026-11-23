@@ -35,7 +35,10 @@ public class UsuarioService {
     private final AuthClient authClient;
     private final AuditoriaUsuarioRepository auditoriaRepository;
 
-    public List<UsuarioRespuesta> listar(String buscar) {
+    public List<UsuarioRespuesta> listar(String buscar, Long actorId, Long actorRoleId) {
+        if (Long.valueOf(1L).equals(actorRoleId) || Long.valueOf(2L).equals(actorRoleId)) {
+            return List.of(obtener(actorId, actorId, actorRoleId));
+        }
         List<Usuario> usuarios = (buscar == null || buscar.isBlank())
                 ? usuarioRepository.findAllByOrderByNombreAsc()
                 : usuarioRepository.findByNombreContainingIgnoreCaseOrRutContainingIgnoreCaseOrderByNombreAsc(buscar, buscar);
@@ -48,7 +51,11 @@ public class UsuarioService {
                 .toList();
     }
 
-    public UsuarioRespuesta obtener(Long id) {
+    public UsuarioRespuesta obtener(Long id, Long actorId, Long actorRoleId) {
+        if ((Long.valueOf(1L).equals(actorRoleId) || Long.valueOf(2L).equals(actorRoleId))
+                && !id.equals(actorId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No puedes consultar otro usuario");
+        }
         return aRespuesta(buscar(id));
     }
 
@@ -77,8 +84,8 @@ public class UsuarioService {
         return aRespuesta(usuarioRepository.save(nuevo));
     }
 
-    public RespuestaAltaCuenta alta(DatosAltaCuenta datos) {
-        validarActorAdministrativo(datos.actorId());
+    public RespuestaAltaCuenta alta(DatosAltaCuenta datos, Long actorId) {
+        validarActorAdministrativo(actorId);
         DatosRegistro registro = new DatosRegistro(
                 datos.nombre(),
                 datos.apellido(),
@@ -116,21 +123,24 @@ public class UsuarioService {
         Usuario guardado;
         try {
             guardado = usuarioRepository.save(nuevo);
-            AuthClient.RespuestaAltaCredencial credencial =
-                    authClient.crearCredencialTemporal(guardado.getId(), guardado.getCorreo());
-            registrarAuditoria(datos.actorId(), guardado.getId(), "ALTA_CUENTA",
+            authClient.crearCredencialTemporal(guardado.getId(), guardado.getCorreo());
+            registrarAuditoria(actorId, guardado.getId(), "ALTA_CUENTA",
                     "Cuenta creada con rol " + nombreRol(guardado.getRolId()));
-            return new RespuestaAltaCuenta(aRespuesta(guardado), credencial.contrasenaTemporal());
+            return new RespuestaAltaCuenta(aRespuesta(guardado));
         } catch (RuntimeException error) {
             if (nuevo.getId() != null) {
-                authClient.eliminarCredencial(nuevo.getId());
+                try {
+                    authClient.eliminarCredencial(nuevo.getId());
+                } catch (RuntimeException errorLimpieza) {
+                    error.addSuppressed(errorLimpieza);
+                }
                 usuarioRepository.delete(nuevo);
             }
             throw error;
         }
     }
 
-    public UsuarioRespuesta actualizar(Long id, DatosActualizacion datos) {
+    public UsuarioRespuesta actualizar(Long id, DatosActualizacion datos, Long actorId) {
         Usuario usuario = buscar(id);
 
         validarDatos(datos.nombre(), datos.apellido(), datos.rut(), datos.correo(), datos.telefono(), datos.rolId());
@@ -150,14 +160,17 @@ public class UsuarioService {
         usuario.setTelefono(datos.telefono().trim());
         usuario.setEmpresaId(datos.empresaId());
         usuario.setRolId(datos.rolId());
-        return aRespuesta(usuarioRepository.save(usuario));
+        Usuario guardado = usuarioRepository.save(usuario);
+        registrarAuditoria(actorId, guardado.getId(), "ACTUALIZACION",
+                "Se actualizaron los datos del usuario");
+        return aRespuesta(guardado);
     }
 
-    public void eliminar(Long id) {
+    public void eliminar(Long id, Long actorId) {
         Usuario usuario = buscar(id);
         usuario.setActivo(false);
         usuarioRepository.save(usuario);
-        registrarAuditoria(null, usuario.getId(), "BAJA_CUENTA", "Cuenta dada de baja");
+        registrarAuditoria(actorId, usuario.getId(), "BAJA_CUENTA", "Cuenta dada de baja");
     }
 
     public UsuarioRespuesta cambiarEstado(Long id, boolean activo, Long actorId) {
@@ -180,6 +193,12 @@ public class UsuarioService {
 
     public List<AuditoriaUsuario> listarAuditoria(Long usuarioId) {
         return auditoriaRepository.findByUsuarioAfectadoIdOrderByFechaDesc(usuarioId);
+    }
+
+    public void validarAccesoAuditoria(Long actorRoleId) {
+        if (!Long.valueOf(3L).equals(actorRoleId) && !Long.valueOf(4L).equals(actorRoleId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo Ingeniería o Jefatura Técnica pueden consultar auditoría");
+        }
     }
 
     private Usuario buscar(Long id) {
@@ -243,7 +262,7 @@ public class UsuarioService {
 
     private boolean validarRut(String rut) {
         if (rut == null) return false;
-        String limpio = rut.replace(".", "").replace("-", "").toUpperCase();
+        String limpio = rut.trim().replace(".", "").replace("-", "").toUpperCase();
         if (!limpio.matches("\\d{7,8}[0-9K]")) return false;
         String cuerpo = limpio.substring(0, limpio.length() - 1);
         char dvIngresado = limpio.charAt(limpio.length() - 1);

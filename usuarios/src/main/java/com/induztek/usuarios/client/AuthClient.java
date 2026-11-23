@@ -12,17 +12,23 @@ public class AuthClient {
 
     private final WebClient webClient;
 
-    public AuthClient(@Value("${auth.service.url:http://localhost:8085}") String authUrl) {
-        this.webClient = WebClient.builder().baseUrl(authUrl).build();
+    public AuthClient(
+            @Value("${auth.service.url:http://localhost:8085}") String authUrl,
+            @Value("${security.internal-token}") String internalToken
+    ) {
+        this.webClient = WebClient.builder()
+                .baseUrl(authUrl)
+                .defaultHeader("X-Internal-Token", internalToken)
+                .build();
     }
 
-    public RespuestaAltaCredencial crearCredencialTemporal(Long usuarioId, String correo) {
+    public void crearCredencialTemporal(Long usuarioId, String correo) {
         try {
-            return webClient.post()
+            webClient.post()
                     .uri("/api/auth/credenciales/alta")
                     .bodyValue(new DatosCredencial(usuarioId, correo, null))
                     .retrieve()
-                    .bodyToMono(RespuestaAltaCredencial.class)
+                    .toBodilessEntity()
                     .block();
         } catch (WebClientRequestException e) {
             throw new ResponseStatusException(
@@ -40,13 +46,14 @@ public class AuthClient {
                     .toBodilessEntity()
                     .block();
         } catch (WebClientRequestException e) {
-            // Compensación best-effort; la cuenta se elimina localmente.
+            throw new ResponseStatusException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "No se pudo confirmar la eliminación de la credencial"
+            );
         }
     }
 
     public record DatosCredencial(Long usuarioId, String correo, String contrasena) {
     }
 
-    public record RespuestaAltaCredencial(String contrasenaTemporal) {
-    }
 }

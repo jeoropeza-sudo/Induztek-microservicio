@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestAttribute;
 
 import java.util.List;
 
@@ -31,44 +32,76 @@ public class UsuarioController {
     private final UsuarioService usuarioService;
 
     @GetMapping
-    public List<UsuarioRespuesta> listar(@RequestParam(required = false) String buscar) {
-        return usuarioService.listar(buscar);
+    public List<UsuarioRespuesta> listar(
+            @RequestParam(required = false) String buscar,
+            @RequestAttribute(value = "actorId", required = false) Long actorId,
+            @RequestAttribute("actorRoleId") Long actorRoleId
+    ) {
+        return usuarioService.listar(buscar, actorId, actorRoleId);
     }
 
     @GetMapping("/{id}")
-    public UsuarioRespuesta obtener(@PathVariable Long id) {
-        return usuarioService.obtener(id);
+    public UsuarioRespuesta obtener(
+            @PathVariable Long id,
+            @RequestAttribute(value = "actorId", required = false) Long actorId,
+            @RequestAttribute("actorRoleId") Long actorRoleId
+    ) {
+        return usuarioService.obtener(id, actorId, actorRoleId);
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public UsuarioRespuesta registrar(@RequestBody DatosRegistro datos) {
-        return usuarioService.registrar(datos);
+    public RespuestaAltaCuenta registrar(
+            @RequestBody DatosRegistro datos,
+            @RequestAttribute("actorId") Long actorId
+    ) {
+        DatosAltaCuenta alta = new DatosAltaCuenta(
+                actorId,
+                datos.nombre(),
+                datos.apellido(),
+                datos.rut(),
+                datos.correo(),
+                datos.telefono(),
+                datos.empresaId(),
+                datos.rolId()
+        );
+        return usuarioService.alta(alta, actorId);
     }
 
     @PostMapping("/alta")
     @ResponseStatus(HttpStatus.CREATED)
-    public RespuestaAltaCuenta alta(@RequestBody DatosAltaCuenta datos) {
-        return usuarioService.alta(datos);
+    public RespuestaAltaCuenta alta(
+            @RequestBody DatosAltaCuenta datos,
+            @RequestAttribute("actorId") Long actorId
+    ) {
+        return usuarioService.alta(datos, actorId);
     }
 
     @PatchMapping("/{id}/estado")
     public UsuarioRespuesta cambiarEstado(
             @PathVariable Long id,
             @RequestParam boolean activo,
-            @RequestParam Long actorId
+            @RequestAttribute("actorId") Long actorId
     ) {
         return usuarioService.cambiarEstado(id, activo, actorId);
     }
 
     @GetMapping("/{id}/auditoria")
-    public List<AuditoriaUsuario> auditoria(@PathVariable Long id) {
+    public List<AuditoriaUsuario> auditoria(
+            @PathVariable Long id,
+            @RequestAttribute("actorRoleId") Long actorRoleId
+    ) {
+        usuarioService.validarAccesoAuditoria(actorRoleId);
         return usuarioService.listarAuditoria(id);
     }
 
     @PutMapping("/{id}")
-    public UsuarioRespuesta actualizar(@PathVariable Long id, @RequestBody DatosActualizacion datos) {
-        return usuarioService.actualizar(id, datos);
+    public UsuarioRespuesta actualizar(
+            @PathVariable Long id,
+            @RequestBody DatosActualizacion datos,
+            @RequestAttribute("actorId") Long actorId
+    ) {
+        return usuarioService.actualizar(id, datos, actorId);
     }
 
     @PatchMapping("/{id}/primer-ingreso")
@@ -79,7 +112,7 @@ public class UsuarioController {
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void eliminar(@PathVariable Long id) {
-        usuarioService.eliminar(id);
+    public void eliminar(@PathVariable Long id, @RequestAttribute("actorId") Long actorId) {
+        usuarioService.eliminar(id, actorId);
     }
 }
