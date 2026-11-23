@@ -1,13 +1,18 @@
 package com.induztek.equipos.controller;
 
 import com.induztek.equipos.dto.AgregarEquipoVisitaRequest;
+import com.induztek.equipos.dto.DatosRecepcion;
 import com.induztek.equipos.model.Visita;
 import com.induztek.equipos.model.VisitaEquipo;
+import com.induztek.equipos.service.ComprobanteService;
 import com.induztek.equipos.service.VisitaService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -29,6 +34,7 @@ import java.util.List;
 public class VisitaController {
 
     private final VisitaService service;
+    private final ComprobanteService comprobanteService;
 
     @GetMapping
     public List<Visita> listar(
@@ -100,6 +106,20 @@ public class VisitaController {
     @PatchMapping("/{id}/cerrar")
     public Visita cerrar(@PathVariable Long id) {
         return service.cerrar(id);
+    }
+
+    @PostMapping("/{id}/recepcion")
+    public Visita registrarRecepcion(@PathVariable Long id, @Valid @RequestBody DatosRecepcion datos) {
+        return service.registrarRecepcion(id, datos);
+    }
+
+    @GetMapping("/{id}/comprobante.pdf")
+    public ResponseEntity<byte[]> comprobante(@PathVariable Long id) {
+        byte[] pdf = comprobanteService.generar(id);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=visita-" + id + ".pdf")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdf);
     }
 
     @PatchMapping("/{id}/registrar")

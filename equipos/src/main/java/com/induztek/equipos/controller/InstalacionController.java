@@ -1,7 +1,7 @@
 package com.induztek.equipos.controller;
 
-import com.induztek.equipos.dto.AsignacionRequest;
 import com.induztek.equipos.model.Instalacion;
+import com.induztek.equipos.model.HistorialCambio;
 import com.induztek.equipos.service.InstalacionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +34,11 @@ public class InstalacionController {
     @GetMapping("/{id}")
     public Instalacion obtener(@PathVariable Long id) {
         return service.obtener(id);
+    }
+
+    @GetMapping("/{id}/historial")
+    public List<HistorialCambio> historial(@PathVariable Long id) {
+        return service.historial(id);
     }
 
     @GetMapping("/empresa/{idEmpresa}")

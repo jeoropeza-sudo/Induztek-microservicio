@@ -1,11 +1,14 @@
 package com.induztek.equipos.service;
 
 import com.induztek.equipos.dto.AgregarEquipoVisitaRequest;
+import com.induztek.equipos.dto.DatosRecepcion;
+import com.induztek.equipos.client.UsuarioClient;
 import com.induztek.equipos.model.Equipo;
 import com.induztek.equipos.model.Instalacion;
 import com.induztek.equipos.model.Visita;
 import com.induztek.equipos.model.VisitaEquipo;
 import com.induztek.equipos.repository.EquipoRepository;
+import com.induztek.equipos.repository.AsignacionTecnicoRepository;
 import com.induztek.equipos.repository.InstalacionRepository;
 import com.induztek.equipos.repository.VisitaEquipoRepository;
 import com.induztek.equipos.repository.VisitaRepository;
@@ -29,18 +32,28 @@ public class VisitaService {
     private final VisitaEquipoRepository visitaEquipoRepository;
     private final EquipoRepository equipoRepository;
     private final InstalacionRepository instalacionRepository;
+    private final AsignacionTecnicoRepository asignacionRepository;
+    private final UsuarioClient usuarioClient;
+    private final AccesoEquiposService accesoService;
+    private final ActorContext actorContext;
 
     public List<Visita> listar(Long idInstalacion, Long idTecnico, String estado) {
+        List<Visita> visitas;
         if (idInstalacion != null) {
-            return visitaRepository.findByIdInstalacionOrderByFechaVisitaDesc(idInstalacion);
+            accesoService.validarInstalacion(idInstalacion);
+            visitas = visitaRepository.findByIdInstalacionOrderByFechaVisitaDesc(idInstalacion);
+        } else if (idTecnico != null) {
+            if (!actorContext.esAdministrador()
+                    && !idTecnico.equals(actorContext.usuarioId())) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No puedes consultar visitas de otro técnico");
+            }
+            visitas = visitaRepository.findByIdTecnicoOrderByFechaVisitaDesc(idTecnico);
+        } else if (estado != null && !estado.isBlank()) {
+            visitas = visitaRepository.findByEstadoOrderByFechaVisitaDesc(estado.trim().toUpperCase());
+        } else {
+            visitas = visitaRepository.findAll();
         }
-        if (idTecnico != null) {
-            return visitaRepository.findByIdTecnicoOrderByFechaVisitaDesc(idTecnico);
-        }
-        if (estado != null && !estado.isBlank()) {
-            return visitaRepository.findByEstadoOrderByFechaVisitaDesc(estado.trim().toUpperCase());
-        }
-        return visitaRepository.findAll();
+        return filtrarVisibles(visitas);
     }
 
     public List<Visita> listarPorFecha(LocalDate desde, LocalDate hasta) {
@@ -49,23 +62,37 @@ public class VisitaService {
         if (fechaHasta.isBefore(fechaDesde)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La fecha final no puede ser anterior a la inicial");
         }
-        return visitaRepository.findByFechaVisitaBetweenOrderByFechaVisitaDesc(
+        List<Visita> visitas = visitaRepository.findByFechaVisitaBetweenOrderByFechaVisitaDesc(
                 fechaDesde.atStartOfDay(),
                 fechaHasta.atTime(LocalTime.MAX)
         );
+        return filtrarVisibles(visitas);
     }
 
     public Visita obtener(Long id) {
-        return visitaRepository.findById(id)
+        Visita visita = visitaRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Visita no encontrada"));
+        accesoService.validarInstalacion(visita.getIdInstalacion());
+        if (Long.valueOf(1L).equals(actorContext.rolId())
+                && !actorContext.usuarioId().equals(visita.getIdTecnico())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "La visita pertenece a otro técnico");
+        }
+        return visita;
     }
 
     public Visita crear(Visita datos) {
+        if (Long.valueOf(1L).equals(actorContext.rolId())
+                && !actorContext.usuarioId().equals(datos.getIdTecnico())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo puedes crear visitas a tu nombre");
+        }
         validarCabecera(datos);
         if (datos.getUuidSync() == null || datos.getUuidSync().isBlank()) {
             datos.setUuidSync(UUID.randomUUID().toString());
-        } else if (visitaRepository.findByUuidSync(datos.getUuidSync()).isPresent()) {
-            return visitaRepository.findByUuidSync(datos.getUuidSync()).orElseThrow();
+        } else {
+            Visita existente = visitaRepository.findByUuidSync(datos.getUuidSync()).orElse(null);
+            if (existente != null) {
+                return obtener(existente.getIdVisita());
+            }
         }
         if (visitaRepository.findByNumeroOt(datos.getNumeroOt().trim()).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe una visita con ese número de OT");
@@ -83,8 +110,18 @@ public class VisitaService {
         if (!"EN_PREPARACION".equals(existente.getEstado())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "La visita ya está cerrada y no puede editarse");
         }
+        if (Long.valueOf(1L).equals(actorContext.rolId())
+                && (!actorContext.usuarioId().equals(datos.getIdTecnico())
+                || !existente.getIdInstalacion().equals(datos.getIdInstalacion()))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No puedes cambiar el técnico ni la instalación de la visita");
+        }
         validarCabecera(datos);
-        existente.setNumeroOt(datos.getNumeroOt().trim());
+        String numeroOt = datos.getNumeroOt().trim();
+        Visita visitaConNumero = visitaRepository.findByNumeroOt(numeroOt).orElse(null);
+        if (visitaConNumero != null && !visitaConNumero.getIdVisita().equals(id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe una visita con ese número de OT");
+        }
+        existente.setNumeroOt(numeroOt);
         existente.setFechaVisita(datos.getFechaVisita());
         existente.setIdInstalacion(datos.getIdInstalacion());
         existente.setIdTecnico(datos.getIdTecnico());
@@ -156,10 +193,30 @@ public class VisitaService {
         if (!"EN_PREPARACION".equals(visita.getEstado())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "La visita ya fue cerrada");
         }
+        if (vacio(visita.getReceptorNombre()) || vacio(visita.getReceptorRut())
+                || vacio(visita.getReceptorCargo()) || visita.getFirmaReceptor() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Registra la recepción y firma antes de cerrar la visita");
+        }
         if (visitaEquipoRepository.findByIdVisitaOrderByOrdenAsc(idVisita).isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La visita debe incluir al menos un equipo");
         }
         visita.setEstado("CERRADA");
+        visita.setUpdatedAt(LocalDateTime.now());
+        return visitaRepository.save(visita);
+    }
+
+    public Visita registrarRecepcion(Long idVisita, DatosRecepcion datos) {
+        Visita visita = obtener(idVisita);
+        if (!"EN_PREPARACION".equals(visita.getEstado())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "La recepción solo puede registrarse durante la preparación");
+        }
+        if (datos.firma().length > 2 * 1024 * 1024 || !esImagenPngOJpeg(datos.firma())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La firma debe ser una imagen PNG o JPEG de hasta 2 MB");
+        }
+        visita.setReceptorNombre(datos.nombre().trim());
+        visita.setReceptorRut(datos.rut().trim());
+        visita.setReceptorCargo(datos.cargo().trim());
+        visita.setFirmaReceptor(datos.firma());
         visita.setUpdatedAt(LocalDateTime.now());
         return visitaRepository.save(visita);
     }
@@ -196,6 +253,13 @@ public class VisitaService {
         if (!datos.getIdInstalacion().equals(instalacion.getIdInstalacion())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Instalación inválida");
         }
+        UsuarioClient.UsuarioReferencia tecnico = usuarioClient.obtener(datos.getIdTecnico());
+        if (tecnico == null || !tecnico.activo() || !Long.valueOf(1L).equals(tecnico.rolId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El técnico indicado no existe o no tiene rol Técnico");
+        }
+        if (asignacionRepository.findByIdTecnicoAndIdInstalacion(datos.getIdTecnico(), datos.getIdInstalacion()).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El técnico no está asignado a la instalación");
+        }
         if (datos.getTemperaturaC() != null && datos.getTemperaturaC() < -50) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Temperatura fuera de rango");
         }
@@ -203,5 +267,41 @@ public class VisitaService {
                 (datos.getHumedadPct() < 0 || datos.getHumedadPct() > 100)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La humedad debe estar entre 0 y 100");
         }
+
+    }
+
+    private boolean esImagenPngOJpeg(byte[] firma) {
+        boolean png = firma.length >= 8
+                && firma[0] == (byte) 0x89
+                && firma[1] == 0x50
+                && firma[2] == 0x4E
+                && firma[3] == 0x47;
+        boolean jpeg = firma.length >= 3
+                && firma[0] == (byte) 0xFF
+                && firma[1] == (byte) 0xD8
+                && firma[2] == (byte) 0xFF;
+        return png || jpeg;
+    }
+
+    private boolean vacio(String valor) {
+        return valor == null || valor.isBlank();
+    }
+
+    private List<Visita> filtrarVisibles(List<Visita> visitas) {
+        List<Visita> resultado = new java.util.ArrayList<>();
+        for (Visita visita : visitas) {
+            try {
+                accesoService.validarInstalacion(visita.getIdInstalacion());
+                if (!Long.valueOf(1L).equals(actorContext.rolId())
+                        || actorContext.usuarioId().equals(visita.getIdTecnico())) {
+                    resultado.add(visita);
+                }
+            } catch (ResponseStatusException e) {
+                if (e.getStatusCode() != HttpStatus.FORBIDDEN) {
+                    throw e;
+                }
+            }
+        }
+        return resultado;
     }
 }

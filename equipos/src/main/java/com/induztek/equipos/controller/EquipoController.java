@@ -2,6 +2,7 @@ package com.induztek.equipos.controller;
 
 import com.induztek.equipos.dto.UbicacionRequest;
 import com.induztek.equipos.model.Equipo;
+import com.induztek.equipos.model.HistorialCambio;
 import com.induztek.equipos.service.EquipoService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +39,16 @@ public class EquipoController {
         return service.buscarPorId(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/{id}/historial")
+    public ResponseEntity<List<HistorialCambio>> historial(@PathVariable Long id) {
+        return ResponseEntity.ok(service.historial(id));
+    }
+
+    @GetMapping("/tecnico/{idTecnico}")
+    public ResponseEntity<List<Equipo>> listarPorTecnico(@PathVariable Long idTecnico) {
+        return ResponseEntity.ok(service.listarPorTecnico(idTecnico));
     }
 
     @PostMapping

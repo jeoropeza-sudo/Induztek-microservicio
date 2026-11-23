@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -66,6 +67,10 @@ public class Visita {
 
     @Column(name = "receptor_cargo", length = 100)
     private String receptorCargo;
+
+    @Lob
+    @Column(name = "firma_receptor", columnDefinition = "LONGBLOB")
+    private byte[] firmaReceptor;
 
     @Column(nullable = false, length = 20)
     @Builder.Default
