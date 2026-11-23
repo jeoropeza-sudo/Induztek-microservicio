@@ -21,13 +21,14 @@ public class JwtService {
         this.minutos = minutos;
     }
 
-    public String crearToken(Long usuarioId, Long rolId) {
+    public String crearToken(Long usuarioId, Long rolId, boolean primerIngreso) {
         Date ahora = new Date();
         Date vence = new Date(ahora.getTime() + minutos * 60 * 1000);
 
         return Jwts.builder()
                 .subject(String.valueOf(usuarioId))
                 .claim("rol", rolId)
+                .claim("primerIngreso", primerIngreso)
                 .issuedAt(ahora)
                 .expiration(vence)
                 .signWith(clave)

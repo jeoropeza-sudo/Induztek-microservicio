@@ -15,8 +15,14 @@ public class UsuarioClient {
 
     private final WebClient webClient;
 
-    public UsuarioClient(@Value("${usuarios.service.url}") String usuariosUrl) {
-        this.webClient = WebClient.builder().baseUrl(usuariosUrl).build();
+    public UsuarioClient(
+            @Value("${usuarios.service.url}") String usuariosUrl,
+            @Value("${security.internal-token}") String internalToken
+    ) {
+        this.webClient = WebClient.builder()
+                .baseUrl(usuariosUrl)
+                .defaultHeader("X-Internal-Token", internalToken)
+                .build();
     }
 
     public UsuarioDto obtener(Long id) {

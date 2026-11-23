@@ -7,11 +7,12 @@ import com.induztek.auth.dto.DatosLogin;
 import com.induztek.auth.dto.DatosOlvide;
 import com.induztek.auth.dto.DatosRestablecer;
 import com.induztek.auth.dto.RespuestaLogin;
-import com.induztek.auth.dto.RespuestaAltaCredencial;
 import com.induztek.auth.dto.UsuarioDto;
 import com.induztek.auth.model.Credencial;
+import com.induztek.auth.model.IntentoAcceso;
 import com.induztek.auth.model.TokenRestablecimiento;
 import com.induztek.auth.repository.CredencialRepository;
+import com.induztek.auth.repository.IntentoAccesoRepository;
 import com.induztek.auth.repository.TokenRestablecimientoRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -27,18 +28,31 @@ import java.time.LocalDateTime;
 public class AuthService {
 
     private static final int MINUTOS_CODIGO = 15;
+    private static final int MAX_INTENTOS_LOGIN = 5;
+    private static final int MINUTOS_BLOQUEO = 15;
 
     private final CredencialRepository credencialRepository;
     private final TokenRestablecimientoRepository tokenRepository;
+    private final IntentoAccesoRepository intentoAccesoRepository;
     private final PasswordEncoder cifradorContrasenas;
     private final JwtService jwtService;
     private final UsuarioClient usuarioClient;
+    private final CorreoService correoService;
 
     public RespuestaLogin iniciarSesion(DatosLogin datos) {
         String correo = datos.correo() == null ? "" : datos.correo().trim().toLowerCase();
-        Credencial credencial = credencialRepository.findByCorreo(correo)
-                .filter(c -> cifradorContrasenas.matches(datos.contrasena(), c.getContrasena()))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Correo o contraseña incorrectos"));
+        IntentoAcceso intento = intentoAccesoRepository.findByCorreo(correo).orElse(null);
+        if (intento != null && intento.getBloqueadoHasta() != null
+                && intento.getBloqueadoHasta().isAfter(LocalDateTime.now())) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "Demasiados intentos. Intenta más tarde");
+        }
+
+        Credencial credencial = credencialRepository.findByCorreo(correo).orElse(null);
+        if (credencial == null || datos.contrasena() == null
+                || !cifradorContrasenas.matches(datos.contrasena(), credencial.getContrasena())) {
+            registrarFalloAcceso(correo, intento);
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Correo o contraseña incorrectos");
+        }
 
         UsuarioDto usuario = usuarioClient.obtener(credencial.getUsuarioId());
         if (usuario == null) {
@@ -48,7 +62,10 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "La cuenta está inactiva");
         }
 
-        String token = jwtService.crearToken(usuario.id(), usuario.rolId());
+        if (intento != null) {
+            intentoAccesoRepository.delete(intento);
+        }
+        String token = jwtService.crearToken(usuario.id(), usuario.rolId(), credencial.isPrimerIngreso());
         return new RespuestaLogin(token, usuario.id(), usuario.rolId(), credencial.isPrimerIngreso());
     }
 
@@ -81,7 +98,7 @@ public class AuthService {
         credencialRepository.save(nueva);
     }
 
-    public RespuestaAltaCredencial crearCredencialTemporal(DatosCredencial datos) {
+    public void crearCredencialTemporal(DatosCredencial datos) {
         if (datos.usuarioId() == null || vacio(datos.correo())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El usuario y el correo son obligatorios");
         }
@@ -108,18 +125,21 @@ public class AuthService {
                 .primerIngreso(true)
                 .build();
         credencialRepository.save(nueva);
-        return new RespuestaAltaCredencial(contrasenaTemporal);
+        correoService.enviarContrasenaTemporal(correo, contrasenaTemporal);
     }
 
     public void eliminarCredencial(Long usuarioId) {
         credencialRepository.findByUsuarioId(usuarioId).ifPresent(credencialRepository::delete);
     }
 
-    public void configurar(DatosCambioContrasena datos) {
+    public RespuestaLogin configurar(DatosCambioContrasena datos, Long actorId, Long actorRoleId) {
         String correo = datos.correo() == null ? "" : datos.correo().trim().toLowerCase();
         Credencial credencial = credencialRepository.findByCorreo(correo)
                 .filter(c -> cifradorContrasenas.matches(datos.contrasenaActual(), c.getContrasena()))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "La contraseña actual es incorrecta"));
+        if (!credencial.getUsuarioId().equals(actorId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo puedes cambiar tu propia contraseña");
+        }
 
         validarContrasena(datos.contrasenaNueva());
 
@@ -127,11 +147,17 @@ public class AuthService {
         credencial.setPrimerIngreso(false);
         credencialRepository.save(credencial);
         usuarioClient.completarPrimerIngreso(credencial.getUsuarioId());
+        String token = jwtService.crearToken(actorId, actorRoleId, false);
+        return new RespuestaLogin(token, actorId, actorRoleId, false);
     }
 
     public void olvide(DatosOlvide datos) {
         String correo = datos.correo() == null ? "" : datos.correo().trim().toLowerCase();
         credencialRepository.findByCorreo(correo).ifPresent(credencial -> {
+            for (TokenRestablecimiento anterior : tokenRepository.findByUsuarioIdAndUsadoFalse(credencial.getUsuarioId())) {
+                anterior.setUsado(true);
+                tokenRepository.save(anterior);
+            }
             String codigo = generarCodigo();
 
             TokenRestablecimiento token = TokenRestablecimiento.builder()
@@ -142,7 +168,7 @@ public class AuthService {
                     .build();
             tokenRepository.save(token);
 
-            System.out.println("Código de restablecimiento para " + credencial.getCorreo() + ": " + codigo);
+            correoService.enviarCodigoRestablecimiento(credencial.getCorreo(), codigo);
         });
     }
 
@@ -171,6 +197,30 @@ public class AuthService {
     private String generarCodigo() {
         int numero = new SecureRandom().nextInt(1_000_000);
         return String.format("%06d", numero);
+    }
+
+    private void registrarFalloAcceso(String correo, IntentoAcceso intento) {
+        if (correo.isBlank()) {
+            return;
+        }
+        IntentoAcceso registro = intento;
+        if (registro == null) {
+            registro = new IntentoAcceso();
+            registro.setCorreo(correo);
+        }
+
+        if (registro.getBloqueadoHasta() != null
+                && !registro.getBloqueadoHasta().isAfter(LocalDateTime.now())) {
+            registro.setFallos(0);
+            registro.setBloqueadoHasta(null);
+        }
+
+        int fallos = registro.getFallos() + 1;
+        registro.setFallos(fallos);
+        if (fallos >= MAX_INTENTOS_LOGIN) {
+            registro.setBloqueadoHasta(LocalDateTime.now().plusMinutes(MINUTOS_BLOQUEO));
+        }
+        intentoAccesoRepository.save(registro);
     }
 
     private String generarContrasenaTemporal() {
