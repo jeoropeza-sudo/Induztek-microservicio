@@ -57,6 +57,15 @@ public class Protocolo {
     @Column(name = "resultado_global", length = 20)
     private String resultadoGlobal;
 
+    @Column(name = "motivo_observacion", columnDefinition = "TEXT")
+    private String motivoObservacion;
+
+    @Column(name = "id_usuario_formaliza")
+    private Long idUsuarioFormaliza;
+
+    @Column(name = "fecha_formalizacion")
+    private Long fechaFormalizacion;
+
     @Column(name = "evidencia_equipo", columnDefinition = "LONGBLOB")
     private byte[] evidenciaEquipo;
 }

@@ -1,6 +1,8 @@
 package com.induztek.protocolos.config;
 
 import com.induztek.protocolos.model.Protocolo;
+import com.induztek.protocolos.model.HistorialEstado;
+import com.induztek.protocolos.repository.HistorialEstadoRepository;
 import com.induztek.protocolos.repository.ProtocoloRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
@@ -13,16 +15,26 @@ import java.util.List;
 public class DataLoader implements CommandLineRunner {
 
     private final ProtocoloRepository repository;
+    private final HistorialEstadoRepository historialRepository;
 
     @Override
     public void run(String... args) {
         if (repository.count() == 0) {
-            repository.saveAll(List.of(
-                protocolo(1L, 1L, "Aislamiento 5 kV DC", "CON_OBSERVACION",
+            List<Protocolo> protocolos = repository.saveAll(List.of(
+                protocolo(1L, 1L, "Aislamiento 5 kV DC", "OBSERVADO",
                         "Índice de polarización bajo 2,0: repetir la prueba en 3 meses."),
                 protocolo(2L, 1L, "Aislamiento 5 kV DC", "APROBADO", ""),
                 protocolo(1L, 1L, "Aislamiento 5 kV DC", "APROBADO", "")
             ));
+            long fecha = System.currentTimeMillis();
+            historialRepository.saveAll(protocolos.stream()
+                    .map(protocolo -> HistorialEstado.builder()
+                            .idProtocolo(protocolo.getIdProtocolo())
+                            .estadoNuevo(protocolo.getEstado())
+                            .idUsuario(protocolo.getIdTecnico())
+                            .fechaHora(fecha)
+                            .build())
+                    .toList());
         }
     }
 

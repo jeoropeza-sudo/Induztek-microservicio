@@ -20,18 +20,30 @@ public class DataLoader implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
+        List<Instrumento> instrumentos;
         if (instrumentoRepository.count() == 0) {
-            List<Instrumento> instrumentos = List.of(
+            instrumentos = List.of(
                     instrumento("Megger MIT525", "MIT-0045821", "Megger", "MIT525", "AISLACION"),
                     instrumento("Megger MIT1025", "MIT-0071233", "Megger", "MIT1025", "AISLACION"),
                     instrumento("TTR Megger MTO330", "TTR-330-119", "Megger", "MTO330", "TTR"),
                     instrumento("Microhmímetro Megger DLRO10", "DLRO-10-071", "Megger", "DLRO10", "DEVANADOS"),
                     instrumento("Test set relé Omicron CMC", "CMC-356-004", "OMICRON", "CMC356", "RELE")
             );
-            instrumentoRepository.saveAll(instrumentos);
+            instrumentos = instrumentoRepository.saveAll(instrumentos);
+        } else {
+            List<String> seriesDemo = List.of(
+                    "MIT-0045821", "MIT-0071233", "TTR-330-119", "DLRO-10-071", "CMC-356-004"
+            );
+            instrumentos = instrumentoRepository.findAll().stream()
+                    .filter(instrumento -> seriesDemo.contains(instrumento.getNumeroSerie()))
+                    .toList();
+        }
 
-            LocalDate hoy = LocalDate.now();
-            for (Instrumento instrumento : instrumentos) {
+        LocalDate hoy = LocalDate.now();
+        for (Instrumento instrumento : instrumentos) {
+            if (calibracionRepository
+                    .findFirstByIdInstrumentoOrderByFechaVencimientoDesc(instrumento.getIdInstrumento())
+                    .isEmpty()) {
                 calibracionRepository.save(Calibracion.builder()
                         .idInstrumento(instrumento.getIdInstrumento())
                         .fechaCalibracion(hoy.minusMonths(6))

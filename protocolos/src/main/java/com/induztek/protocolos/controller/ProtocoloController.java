@@ -2,6 +2,7 @@ package com.induztek.protocolos.controller;
 
 import com.induztek.protocolos.dto.ProtocoloDetalleResponse;
 import com.induztek.protocolos.dto.CrearProtocoloRequest;
+import com.induztek.protocolos.dto.ActualizarEstadoRequest;
 import com.induztek.protocolos.model.Medicion;
 import com.induztek.protocolos.model.Protocolo;
 import com.induztek.protocolos.service.ProtocoloService;
@@ -69,6 +70,14 @@ public class ProtocoloController {
         return service.formalizar(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PatchMapping("/{id}/estado")
+    public ResponseEntity<Protocolo> cambiarEstado(
+            @PathVariable Long id,
+            @RequestBody ActualizarEstadoRequest request
+    ) {
+        return ResponseEntity.ok(service.cambiarEstado(id, request.estado(), request.motivo()));
     }
 
     @DeleteMapping("/{id}")

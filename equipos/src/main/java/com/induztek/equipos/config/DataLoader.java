@@ -21,9 +21,9 @@ public class DataLoader implements CommandLineRunner {
     public void run(String... args) {
         if (instalacionRepository.count() == 0) {
             instalacionRepository.saveAll(List.of(
-                    Instalacion.builder().idEmpresa(1L).idUsuarioCliente(2L).nombre("Planta Lampa").direccion("Camino Los Maitenes 1200, Lampa").activa(true).build(),
-                    Instalacion.builder().idEmpresa(2L).idUsuarioCliente(3L).nombre("Planta Quilicura").direccion("Av. Américo Vespucio 1500, Quilicura").activa(true).build(),
-                    Instalacion.builder().idEmpresa(3L).idUsuarioCliente(4L).nombre("Planta Puerto Montt").direccion("Ruta 5 Sur Km 1020, Puerto Montt").activa(true).build()
+                    Instalacion.builder().idEmpresa(2L).idUsuarioCliente(2L).nombre("Planta Lampa").direccion("Camino Los Maitenes 1200, Lampa").activa(true).build(),
+                    Instalacion.builder().idEmpresa(2L).idUsuarioCliente(2L).nombre("Planta Quilicura").direccion("Av. Américo Vespucio 1500, Quilicura").activa(true).build(),
+                    Instalacion.builder().idEmpresa(3L).idUsuarioCliente(3L).nombre("Planta Puerto Montt").direccion("Ruta 5 Sur Km 1020, Puerto Montt").activa(true).build()
             ));
         }
         if (repository.count() == 0) {

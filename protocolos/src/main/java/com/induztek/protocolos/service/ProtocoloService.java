@@ -11,6 +11,8 @@ import com.induztek.protocolos.dto.CrearProtocoloRequest;
 import com.induztek.protocolos.model.Medicion;
 import com.induztek.protocolos.repository.MedicionRepository;
 import com.induztek.protocolos.repository.ProtocoloRepository;
+import com.induztek.protocolos.model.HistorialEstado;
+import com.induztek.protocolos.repository.HistorialEstadoRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -33,6 +35,7 @@ public class ProtocoloService {
     private final EquipoClient equipoClient;
     private final UsuarioClient usuarioClient;
     private final MedicionRepository medicionRepository;
+    private final HistorialEstadoRepository historialRepository;
     private final InstrumentoClient instrumentoClient;
     private final ActorContext actorContext;
 
@@ -45,7 +48,8 @@ public class ProtocoloService {
                 equipo != null ? equipo.getCodigo() : "Equipo #" + p.getIdEquipo(),
                 equipo != null ? equipo.getTipo() : "Desconocido",
                 equipo != null ? equipo.getInstalacion() : "Sin instalación",
-                tecnico != null ? tecnico.getNombre() : "Técnico #" + p.getIdTecnico()
+                tecnico != null ? tecnico.getNombre() : "Técnico #" + p.getIdTecnico(),
+                historialRepository.findByIdProtocoloOrderByIdAsc(p.getIdProtocolo())
         );
     }
 
@@ -141,7 +145,16 @@ public class ProtocoloService {
         if (protocolo.getResultadoGlobal() == null || protocolo.getResultadoGlobal().isBlank()) {
             protocolo.setResultadoGlobal(protocolo.getResultado());
         }
+        boolean esNuevo = protocolo.getIdProtocolo() == null;
         Protocolo guardado = repository.save(protocolo);
+        if (esNuevo) {
+            historialRepository.save(HistorialEstado.builder()
+                    .idProtocolo(guardado.getIdProtocolo())
+                    .estadoNuevo(guardado.getEstado())
+                    .idUsuario(actorContext.usuarioId())
+                    .fechaHora(System.currentTimeMillis())
+                    .build());
+        }
         if (request.mediciones() != null) {
             medicionRepository.deleteByIdProtocolo(guardado.getIdProtocolo());
             for (Medicion medicion : request.mediciones()) {
@@ -156,14 +169,19 @@ public class ProtocoloService {
         return guardado;
     }
 
+    @Transactional
     public Optional<Protocolo> formalizar(Long id) {
+        if (!actorContext.esAdministrador()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo Ingeniería o Jefatura Técnica pueden formalizar protocolos");
+        }
         return repository.findById(id).map(existente -> {
             validarAccesoEquipo(existente.getIdEquipo());
             if ("FORMALIZADO".equals(existente.getEstado())) {
                 return existente;
             }
             if (!"REGISTRADO_EN_TERRENO".equals(existente.getEstado()) &&
-                    !"REGISTRADO".equals(existente.getEstado())) {
+                    !"REGISTRADO".equals(existente.getEstado()) &&
+                    !"OBSERVADO".equals(existente.getEstado())) {
                 throw new ResponseStatusException(
                         HttpStatus.CONFLICT,
                         "Solo puede formalizarse un protocolo registrado en terreno"
@@ -182,9 +200,62 @@ public class ProtocoloService {
                 }
                 instrumentoClient.validarVigencia(medicion.getIdInstrumento(), fechaMedicion);
             }
+            String estadoAnterior = existente.getEstado();
             existente.setEstado("FORMALIZADO");
-            return repository.save(existente);
+            existente.setIdUsuarioFormaliza(actorContext.usuarioId());
+            existente.setFechaFormalizacion(System.currentTimeMillis());
+            Protocolo actualizado = repository.save(existente);
+            historialRepository.save(HistorialEstado.builder()
+                    .idProtocolo(id)
+                    .estadoAnterior(estadoAnterior)
+                    .estadoNuevo("FORMALIZADO")
+                    .idUsuario(actorContext.usuarioId())
+                    .fechaHora(System.currentTimeMillis())
+                    .motivo("Aprobado y formalizado oficialmente")
+                    .build());
+            return actualizado;
         });
+    }
+
+    @Transactional
+    public Protocolo cambiarEstado(Long id, String nuevoEstado, String motivo) {
+        if (!actorContext.esAdministrador()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo Ingeniería o Jefatura Técnica pueden revisar protocolos");
+        }
+        Protocolo protocolo = repository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Protocolo no encontrado"));
+        validarAccesoEquipo(protocolo.getIdEquipo());
+        boolean transicionValida = switch (protocolo.getEstado()) {
+            case "REGISTRADO_EN_TERRENO", "REGISTRADO" ->
+                    "FORMALIZADO".equals(nuevoEstado) || "OBSERVADO".equals(nuevoEstado) || "ANULADO".equals(nuevoEstado);
+            case "OBSERVADO" -> "FORMALIZADO".equals(nuevoEstado) || "ANULADO".equals(nuevoEstado);
+            default -> false;
+        };
+        if (!transicionValida) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "La transición de estado no está permitida");
+        }
+        if (("OBSERVADO".equals(nuevoEstado) || "ANULADO".equals(nuevoEstado))
+                && (motivo == null || motivo.isBlank())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El motivo es obligatorio");
+        }
+        if ("FORMALIZADO".equals(nuevoEstado)) {
+            return formalizar(id).orElseThrow();
+        }
+        String estadoAnterior = protocolo.getEstado();
+        protocolo.setEstado(nuevoEstado);
+        if ("OBSERVADO".equals(nuevoEstado)) {
+            protocolo.setMotivoObservacion(motivo.trim());
+        }
+        Protocolo actualizado = repository.save(protocolo);
+        historialRepository.save(HistorialEstado.builder()
+                .idProtocolo(id)
+                .estadoAnterior(estadoAnterior)
+                .estadoNuevo(nuevoEstado)
+                .idUsuario(actorContext.usuarioId())
+                .fechaHora(System.currentTimeMillis())
+                .motivo(motivo)
+                .build());
+        return actualizado;
     }
 
     @Transactional
