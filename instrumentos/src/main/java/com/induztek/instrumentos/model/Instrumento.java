@@ -47,4 +47,8 @@ public class Instrumento {
     @Column(nullable = false)
     @Builder.Default
     private boolean activo = true;
+
+    @Column(name = "bloqueado_por_vencimiento", nullable = false)
+    @Builder.Default
+    private boolean bloqueadoPorVencimiento = false;
 }

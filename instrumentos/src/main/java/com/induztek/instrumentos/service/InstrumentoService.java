@@ -8,6 +8,9 @@ import com.induztek.instrumentos.repository.InstrumentoRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
@@ -21,6 +24,7 @@ public class InstrumentoService {
     private final CalibracionRepository calibracionRepository;
 
     public List<Instrumento> listar(String tipoPrueba, Boolean activo) {
+        bloquearVencidos();
         if (tipoPrueba != null && !tipoPrueba.isBlank()) {
             return instrumentoRepository.findByTipoPruebaAndActivoTrueOrderByNombreAsc(tipoPrueba.trim().toUpperCase());
         }
@@ -31,6 +35,7 @@ public class InstrumentoService {
     }
 
     public Instrumento obtener(Long id) {
+        bloquearVencidos();
         return instrumentoRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Instrumento no encontrado"));
     }
@@ -43,7 +48,8 @@ public class InstrumentoService {
         }
         datos.setNumeroSerie(serie);
         datos.setTipoPrueba(datos.getTipoPrueba().trim().toUpperCase());
-        datos.setActivo(true);
+        datos.setActivo(false);
+        datos.setBloqueadoPorVencimiento(true);
         return instrumentoRepository.save(datos);
     }
 
@@ -64,7 +70,11 @@ public class InstrumentoService {
 
     public Instrumento cambiarEstado(Long id, boolean activo) {
         Instrumento instrumento = obtener(id);
+        if (activo && !vigenteHoy(id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "No se puede activar un instrumento con calibración vencida");
+        }
         instrumento.setActivo(activo);
+        instrumento.setBloqueadoPorVencimiento(false);
         return instrumentoRepository.save(instrumento);
     }
 
@@ -77,7 +87,14 @@ public class InstrumentoService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La fecha de vencimiento no puede ser anterior a la calibración");
         }
         datos.setIdInstrumento(idInstrumento);
-        return calibracionRepository.save(datos);
+        Calibracion calibracion = calibracionRepository.save(datos);
+        Instrumento instrumento = obtener(idInstrumento);
+        if (instrumento.isBloqueadoPorVencimiento() && !datos.getFechaVencimiento().isBefore(LocalDate.now())) {
+            instrumento.setActivo(true);
+            instrumento.setBloqueadoPorVencimiento(false);
+            instrumentoRepository.save(instrumento);
+        }
+        return calibracion;
     }
 
     public List<Calibracion> listarCalibraciones(Long idInstrumento) {
@@ -107,6 +124,37 @@ public class InstrumentoService {
                 ultima.getFechaVencimiento(),
                 ultima.getCertificado()
         );
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void bloquearVencidosAlIniciar() {
+        bloquearVencidos();
+    }
+
+    @Scheduled(cron = "0 5 0 * * *")
+    public void bloquearVencidosDiariamente() {
+        bloquearVencidos();
+    }
+
+    private void bloquearVencidos() {
+        for (Instrumento instrumento : instrumentoRepository.findAll()) {
+            if (instrumento.isActivo() && !vigenteHoy(instrumento.getIdInstrumento())) {
+                instrumento.setActivo(false);
+                instrumento.setBloqueadoPorVencimiento(true);
+                instrumentoRepository.save(instrumento);
+            }
+        }
+    }
+
+    private boolean vigenteHoy(Long idInstrumento) {
+        LocalDate hoy = LocalDate.now();
+        return calibracionRepository
+                .findFirstByIdInstrumentoAndFechaCalibracionLessThanEqualAndFechaVencimientoGreaterThanEqualOrderByFechaCalibracionDesc(
+                        idInstrumento,
+                        hoy,
+                        hoy
+                )
+                .isPresent();
     }
 
     private void validar(Instrumento datos) {
