@@ -21,10 +21,10 @@ public class DatosIniciales implements CommandLineRunner {
     public void run(String... args) {
         if (rolRepository.count() == 0) {
             rolRepository.saveAll(List.of(
-                    Rol.builder().id(1L).nombre("Técnico").codigo("TECNICO").build(),
-                    Rol.builder().id(2L).nombre("Cliente").codigo("CLIENTE").build(),
-                    Rol.builder().id(3L).nombre("Ingeniería").codigo("INGENIERIA").build(),
-                    Rol.builder().id(4L).nombre("Jefatura Técnica").codigo("JEFE_TECNICO").build()
+                    Rol.builder().nombre("Técnico").codigo("TECNICO").build(),
+                    Rol.builder().nombre("Cliente").codigo("CLIENTE").build(),
+                    Rol.builder().nombre("Ingeniería").codigo("INGENIERIA").build(),
+                    Rol.builder().nombre("Jefatura Técnica").codigo("JEFE_TECNICO").build()
             ));
         }
         if (usuarioRepository.count() == 0) {
