@@ -16,8 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 		"spring.datasource.password=",
 		"spring.jpa.hibernate.ddl-auto=create-drop",
 		"eureka.client.enabled=false",
-		"jwt.secreto=equipos-test-secret-key-that-is-at-least-32-bytes",
-		"security.internal-token=equipos-test-internal-token"
+		"jwt.secreto=equipos-test-secret-key-that-is-at-least-32-bytes"
 })
 class EquiposApplicationTests {
 

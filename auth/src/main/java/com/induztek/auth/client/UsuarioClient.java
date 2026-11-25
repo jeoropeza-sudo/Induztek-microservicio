@@ -1,6 +1,7 @@
 package com.induztek.auth.client;
 
 import com.induztek.auth.dto.UsuarioDto;
+import com.induztek.auth.config.ServiceJwtProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -17,11 +18,11 @@ public class UsuarioClient {
 
     public UsuarioClient(
             @Value("${usuarios.service.url}") String usuariosUrl,
-            @Value("${security.internal-token}") String internalToken
+            ServiceJwtProvider serviceJwtProvider
     ) {
         this.webClient = WebClient.builder()
                 .baseUrl(usuariosUrl)
-                .defaultHeader("X-Internal-Token", internalToken)
+                .filter(serviceJwtProvider.authorizationFilter())
                 .build();
     }
 

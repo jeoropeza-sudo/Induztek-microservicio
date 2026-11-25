@@ -17,20 +17,21 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import javax.crypto.SecretKey;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final SecretKey secretKey;
-    private final String internalToken;
+    private static final List<String> SERVICE_NAMES = List.of(
+            "auth", "usuarios", "empresas", "equipos", "instrumentos", "protocolos"
+    );
 
     public JwtAuthenticationFilter(
-            @Value("${jwt.secreto}") String secret,
-            @Value("${security.internal-token:}") String internalToken
+            @Value("${jwt.secreto}") String secret
     ) {
         secretKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
-        this.internalToken = internalToken;
     }
 
     @Override
@@ -42,15 +43,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        String internalHeader = request.getHeader("X-Internal-Token");
-        if (!internalToken.isBlank() && internalToken.equals(internalHeader)) {
-            if (!establecerActorInterno(request, response)) {
-                return;
-            }
-            chain.doFilter(request, response);
-            return;
-        }
-
         String header = request.getHeader("Authorization");
         if (header == null || !header.startsWith("Bearer ")) {
             responder(response, HttpServletResponse.SC_UNAUTHORIZED);
@@ -59,8 +51,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             Claims claims = Jwts.parser().verifyWith(secretKey).build()
                     .parseSignedClaims(header.substring(7).trim()).getPayload();
-            String subject = claims.getSubject();
+            String serviceName = claims.get("service", String.class);
             Number roleClaim = claims.get("rol", Number.class);
+            if (serviceName != null) {
+                if (!SERVICE_NAMES.contains(serviceName)
+                        || !serviceName.equals(claims.getIssuer())
+                        || roleClaim == null
+                        || roleClaim.longValue() != 4L) {
+                    responder(response, HttpServletResponse.SC_UNAUTHORIZED);
+                    return;
+                }
+                request.setAttribute("actorRoleId", 4L);
+                chain.doFilter(request, response);
+                return;
+            }
+
+            String subject = claims.getSubject();
             if (subject == null || roleClaim == null) {
                 responder(response, HttpServletResponse.SC_UNAUTHORIZED);
                 return;
@@ -103,32 +109,5 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         response.setStatus(status);
         response.setContentType("application/json;charset=UTF-8");
         response.getWriter().write("{\"error\":\"Acceso no autorizado\",\"status\":" + status + "}");
-    }
-
-    private boolean establecerActorInterno(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        String actorId = request.getHeader("X-User-Id");
-        String roleId = request.getHeader("X-User-Role");
-        if (actorId == null && roleId == null) {
-            request.setAttribute("actorRoleId", 4L);
-            return true;
-        }
-        if (actorId == null || roleId == null) {
-            responder(response, HttpServletResponse.SC_UNAUTHORIZED);
-            return false;
-        }
-        try {
-            Long id = Long.valueOf(actorId);
-            Long rol = Long.valueOf(roleId);
-            if (id <= 0 || rol < 1 || rol > 4) {
-                responder(response, HttpServletResponse.SC_UNAUTHORIZED);
-                return false;
-            }
-            request.setAttribute("actorId", id);
-            request.setAttribute("actorRoleId", rol);
-            return true;
-        } catch (NumberFormatException e) {
-            responder(response, HttpServletResponse.SC_UNAUTHORIZED);
-            return false;
-        }
     }
 }

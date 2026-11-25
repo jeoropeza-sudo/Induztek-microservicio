@@ -4,9 +4,6 @@ server:
 jwt:
   secreto: ${JWT_SECRET}
 
-security:
-  internal-token: ${INTERNAL_SERVICE_TOKEN}
-
 spring:
   application:
     name: api-gateway

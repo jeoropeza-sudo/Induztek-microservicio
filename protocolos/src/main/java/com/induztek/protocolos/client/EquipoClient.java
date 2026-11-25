@@ -1,6 +1,7 @@
 package com.induztek.protocolos.client;
 
 import com.induztek.protocolos.dto.EquipoExternoDTO;
+import com.induztek.protocolos.config.ServiceJwtProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -18,11 +19,11 @@ public class EquipoClient {
 
     public EquipoClient(
             @Value("${equipos.service.url:http://localhost:8083}") String equiposUrl,
-            @Value("${security.internal-token}") String internalToken
+            ServiceJwtProvider serviceJwtProvider
     ) {
         webClient = WebClient.builder()
                 .baseUrl(equiposUrl)
-                .defaultHeader("X-Internal-Token", internalToken)
+                .filter(serviceJwtProvider.authorizationFilter())
                 .build();
     }
 

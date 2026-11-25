@@ -153,32 +153,6 @@ public class UsuarioService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un usuario con ese RUT");
         }
 
-        public UsuarioRespuesta actualizarPerfil(Long id, DatosPerfil datos, Long actorId, Long actorRoleId) {
-            validarAccesoPropioOAdministrativo(id, actorId, actorRoleId);
-            if (vacio(datos.nombre()) || vacio(datos.apellido()) || vacio(datos.telefono())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nombre, apellido y teléfono son obligatorios");
-            }
-            Usuario usuario = buscar(id);
-            usuario.setNombre(datos.nombre().trim());
-            usuario.setApellido(datos.apellido().trim());
-            usuario.setTelefono(datos.telefono().trim());
-            Usuario guardado = usuarioRepository.save(usuario);
-            registrarAuditoria(actorId, id, "ACTUALIZACION_PERFIL", "Se actualizaron nombre y teléfono");
-            return aRespuesta(guardado);
-        }
-
-        public void validarAccesoAvatar(Long id, Long actorId, Long actorRoleId) {
-            validarAccesoPropioOAdministrativo(id, actorId, actorRoleId);
-            buscar(id);
-        }
-
-        private void validarAccesoPropioOAdministrativo(Long id, Long actorId, Long actorRoleId) {
-            boolean esAdministrativo = ROL_INGENIERO.equals(actorRoleId)
-                    || ROL_JEFE_TECNICO.equals(actorRoleId);
-            if (!esAdministrativo && (actorId == null || !actorId.equals(id))) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo puedes modificar tu propio perfil");
-            }
-        }
         if (usuarioRepository.existsByCorreoIgnoreCaseAndIdNot(datos.correo().trim(), id)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un usuario con ese correo");
         }
@@ -194,6 +168,33 @@ public class UsuarioService {
         registrarAuditoria(actorId, guardado.getId(), "ACTUALIZACION",
                 "Se actualizaron los datos del usuario");
         return aRespuesta(guardado);
+    }
+
+    public UsuarioRespuesta actualizarPerfil(Long id, DatosPerfil datos, Long actorId, Long actorRoleId) {
+        validarAccesoPropioOAdministrativo(id, actorId, actorRoleId);
+        if (vacio(datos.nombre()) || vacio(datos.apellido()) || vacio(datos.telefono())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nombre, apellido y teléfono son obligatorios");
+        }
+        Usuario usuario = buscar(id);
+        usuario.setNombre(datos.nombre().trim());
+        usuario.setApellido(datos.apellido().trim());
+        usuario.setTelefono(datos.telefono().trim());
+        Usuario guardado = usuarioRepository.save(usuario);
+        registrarAuditoria(actorId, id, "ACTUALIZACION_PERFIL", "Se actualizaron nombre y teléfono");
+        return aRespuesta(guardado);
+    }
+
+    public void validarAccesoAvatar(Long id, Long actorId, Long actorRoleId) {
+        validarAccesoPropioOAdministrativo(id, actorId, actorRoleId);
+        buscar(id);
+    }
+
+    private void validarAccesoPropioOAdministrativo(Long id, Long actorId, Long actorRoleId) {
+        boolean esAdministrativo = ROL_INGENIERO.equals(actorRoleId)
+                || ROL_JEFE_TECNICO.equals(actorRoleId);
+        if (!esAdministrativo && (actorId == null || !actorId.equals(id))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo puedes modificar tu propio perfil");
+        }
     }
 
     public void eliminar(Long id, Long actorId) {

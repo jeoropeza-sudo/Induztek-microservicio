@@ -30,14 +30,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     );
 
     private final SecretKey secretKey;
-    private final String internalToken;
+    private static final List<String> SERVICE_NAMES = List.of(
+            "auth", "usuarios", "empresas", "equipos", "instrumentos", "protocolos"
+    );
 
     public JwtAuthenticationFilter(
-            @Value("${jwt.secreto}") String secret,
-            @Value("${security.internal-token:}") String internalToken
+            @Value("${jwt.secreto}") String secret
     ) {
         secretKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
-        this.internalToken = internalToken;
     }
 
     @Override
@@ -58,21 +58,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        String internalHeader = request.getHeader("X-Internal-Token");
         boolean endpointPrimerIngreso = path.matches("^/api/usuarios/\\d+/primer-ingreso$");
         if (endpointPrimerIngreso
                 && (request.getHeader("X-User-Id") != null || request.getHeader("X-User-Role") != null)) {
-            responder(response, HttpServletResponse.SC_FORBIDDEN, "Solo el servicio de autenticación puede completar el primer ingreso");
-            return;
-        }
-        if (!internalToken.isBlank() && internalToken.equals(internalHeader)) {
-            if (!establecerActorInterno(request, response)) {
-                return;
-            }
-            chain.doFilter(request, response);
-            return;
-        }
-        if (path.matches("^/api/usuarios/\\d+/primer-ingreso$")) {
             responder(response, HttpServletResponse.SC_FORBIDDEN, "Solo el servicio de autenticación puede completar el primer ingreso");
             return;
         }
@@ -89,8 +77,30 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     .build()
                     .parseSignedClaims(header.substring(7).trim())
                     .getPayload();
-            String subject = claims.getSubject();
+            String serviceName = claims.get("service", String.class);
             Number roleClaim = claims.get("rol", Number.class);
+            if (serviceName != null) {
+                if (!SERVICE_NAMES.contains(serviceName)
+                        || !serviceName.equals(claims.getIssuer())
+                        || roleClaim == null
+                        || roleClaim.longValue() != 4L) {
+                    responder(response, HttpServletResponse.SC_UNAUTHORIZED, "JWT de servicio inválido");
+                    return;
+                }
+                if (endpointPrimerIngreso && !"auth".equals(serviceName)) {
+                    responder(response, HttpServletResponse.SC_FORBIDDEN, "Solo el servicio de autenticación puede completar el primer ingreso");
+                    return;
+                }
+                request.setAttribute("actorRoleId", 4L);
+                chain.doFilter(request, response);
+                return;
+            }
+            if (endpointPrimerIngreso) {
+                responder(response, HttpServletResponse.SC_FORBIDDEN, "Solo el servicio de autenticación puede completar el primer ingreso");
+                return;
+            }
+
+            String subject = claims.getSubject();
             if (subject == null || roleClaim == null) {
                 responder(response, HttpServletResponse.SC_UNAUTHORIZED, "El JWT no contiene usuario y rol");
                 return;
@@ -140,32 +150,5 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         response.setStatus(status);
         response.setContentType("application/json;charset=UTF-8");
         response.getWriter().write("{\"error\":\"" + mensaje + "\",\"status\":" + status + "}");
-    }
-
-    private boolean establecerActorInterno(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        String actorId = request.getHeader("X-User-Id");
-        String roleId = request.getHeader("X-User-Role");
-        if (actorId == null && roleId == null) {
-            request.setAttribute("actorRoleId", 4L);
-            return true;
-        }
-        if (actorId == null || roleId == null) {
-            responder(response, HttpServletResponse.SC_UNAUTHORIZED, "Contexto de identidad inválido");
-            return false;
-        }
-        try {
-            Long id = Long.valueOf(actorId);
-            Long rol = Long.valueOf(roleId);
-            if (id <= 0 || rol < 1 || rol > 4) {
-                responder(response, HttpServletResponse.SC_UNAUTHORIZED, "Contexto de identidad inválido");
-                return false;
-            }
-            request.setAttribute("actorId", id);
-            request.setAttribute("actorRoleId", rol);
-            return true;
-        } catch (NumberFormatException e) {
-            responder(response, HttpServletResponse.SC_UNAUTHORIZED, "Contexto de identidad inválido");
-            return false;
-        }
     }
 }

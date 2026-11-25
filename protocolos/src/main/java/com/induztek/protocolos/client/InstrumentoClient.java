@@ -1,5 +1,6 @@
 package com.induztek.protocolos.client;
 
+import com.induztek.protocolos.config.ServiceJwtProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -16,11 +17,11 @@ public class InstrumentoClient {
 
     public InstrumentoClient(
             @Value("${instrumentos.service.url:http://localhost:8086}") String instrumentosUrl,
-            @Value("${security.internal-token}") String internalToken
+            ServiceJwtProvider serviceJwtProvider
     ) {
         webClient = WebClient.builder()
                 .baseUrl(instrumentosUrl)
-                .defaultHeader("X-Internal-Token", internalToken)
+                .filter(serviceJwtProvider.authorizationFilter())
                 .build();
     }
 

@@ -29,14 +29,11 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
             "/api/auth/olvide",
             "/api/auth/restablecer"
     );
-    private final String internalToken;
 
     public JwtAuthenticationFilter(
-            @Value("${jwt.secreto}") String secreto,
-            @Value("${security.internal-token}") String internalToken
+            @Value("${jwt.secreto}") String secreto
     ) {
         this.secretKey = Keys.hmacShaKeyFor(secreto.getBytes(StandardCharsets.UTF_8));
-        this.internalToken = internalToken;
     }
 
     @Override
@@ -83,16 +80,12 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
                 return onError(exchange, "Acceso denegado: el rol no tiene permisos para realizar esta acción", HttpStatus.FORBIDDEN);
             }
 
-            // 5. Inyectar encabezados de contexto para microservicios aguas abajo
+            // 5. Evitar que el cliente suplante encabezados de contexto internos.
             ServerHttpRequest mutatedRequest = request.mutate()
                     .headers(headers -> {
                         headers.remove("X-User-Id");
                         headers.remove("X-User-Role");
-                        headers.remove("X-Internal-Token");
                     })
-                    .header("X-User-Id", usuarioId)
-                    .header("X-User-Role", String.valueOf(rolId))
-                    .header("X-Internal-Token", internalToken)
                     .build();
 
             return chain.filter(exchange.mutate().request(mutatedRequest).build());

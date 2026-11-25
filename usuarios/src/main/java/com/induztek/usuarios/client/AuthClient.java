@@ -1,5 +1,6 @@
 package com.induztek.usuarios.client;
 
+import com.induztek.usuarios.config.ServiceJwtProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -14,11 +15,11 @@ public class AuthClient {
 
     public AuthClient(
             @Value("${auth.service.url:http://localhost:8085}") String authUrl,
-            @Value("${security.internal-token}") String internalToken
+            ServiceJwtProvider serviceJwtProvider
     ) {
         this.webClient = WebClient.builder()
                 .baseUrl(authUrl)
-                .defaultHeader("X-Internal-Token", internalToken)
+                .filter(serviceJwtProvider.authorizationFilter())
                 .build();
     }
 
